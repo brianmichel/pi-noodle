@@ -37,7 +37,7 @@ const CAPTURE_CASES: MemoryEvalCase[] = [
   },
   {
     name: "captures project decision",
-    messages: ["For pi-noodle, we're using Turso for vector search."],
+    messages: ["We're using Turso for our vector search."],
     expectedSaved: ["Team uses Turso"],
   },
   {
