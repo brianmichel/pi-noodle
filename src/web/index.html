@@ -3,64 +3,73 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Memories · Noodle</title>
+    <title>Noodle</title>
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26.0645 21.6113' fill='%2374A4BC'%3E%3Cpath d='M5.44922 15.8594C7.82227 15.8594 9.27734 14.2773 9.27734 12.2266C9.27734 11.582 9.00391 10.8496 8.62305 10.4785C8.18359 10.0586 7.90039 9.94141 7.90039 9.45312C7.90039 9.05273 8.20312 8.7793 8.66211 8.7793C8.99414 8.7793 9.20898 8.87695 9.56055 9.17969C9.86328 9.44336 10.127 9.77539 10.3125 10.166C11.8164 9.81445 12.3828 8.89648 12.3828 7.42188C12.3828 6.99219 12.7441 6.63086 13.1738 6.63086C13.6035 6.63086 13.9551 6.99219 13.9551 7.42188C13.9648 9.58008 12.9688 11.084 10.7812 11.6406C10.8008 11.8359 10.8203 12.041 10.8203 12.2559C10.8203 14.082 10.0293 15.5566 8.65234 16.4844C9.62891 17.0898 10.8789 17.4316 12.1582 17.4316C12.4023 17.4316 12.6758 17.4121 13.1934 17.3926C13.0859 16.9043 13.0273 16.4453 13.0273 16.0059C13.0273 10.2051 21.25 10.8398 21.25 5.32227C21.25 3.02734 19.0234 1.45508 16.8555 1.45508C16.6602 1.45508 16.3867 1.49414 16.1133 1.55273C15.332 0.585938 14.082 0 12.9102 0C10.8398 0 9.46289 1.34766 9.39453 3.21289C9.375 3.71094 9.04297 3.99414 8.61328 3.99414C8.16406 3.99414 7.82227 3.65234 7.8418 3.14453C7.87109 2.44141 8.01758 1.79688 8.27148 1.23047C7.8125 1.10352 7.35352 1.04492 6.89453 1.04492C4.53125 1.04492 2.76367 2.53906 2.76367 4.36523C2.76367 5.58594 3.67188 6.5918 4.99023 6.5918C5.41992 6.5918 5.77148 6.95312 5.77148 7.37305C5.77148 7.80273 5.41992 8.16406 4.99023 8.16406C3.28125 8.16406 2.03125 7.37305 1.45508 6.13281C0.537109 7.19727 0 8.60352 0 10.0586C0 13.4082 2.1582 15.8594 5.44922 15.8594ZM21.1914 21.6016C23.6328 21.6016 24.8242 18.6328 24.8242 15.7422C24.8242 15.3027 24.8047 14.8926 24.7949 14.5117C23.9355 14.9512 22.8906 15.1465 21.6895 15.0684C21.25 15.0391 20.8984 14.7266 20.8984 14.2871C20.8984 13.8574 21.25 13.4668 21.6895 13.5059C24.0918 13.6914 25.7031 12.3438 25.7031 10.1465C25.7031 8.19336 24.6484 6.5918 22.9492 5.78125C21.709 12.207 14.6875 11.3477 14.4727 15.7227C14.4043 17.1973 15.5273 18.3594 17.1289 18.3594C17.6953 18.3594 17.9785 18.3398 18.2324 18.3301C18.457 19.9902 19.502 21.6016 21.1914 21.6016Z'/%3E%3C/svg%3E"
+    />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap"
       rel="stylesheet"
     />
     <style>
+      /* ─────────────────────────────────────────────
+         TOKENS
+         ───────────────────────────────────────────── */
       :root {
-        --bg: #fafaf9;
-        --canvas: #f4f4f3;
-        --sidebar: #ffffff;
+        --bg: #f7f7f5;
         --surface: #ffffff;
-        --surface-2: #f7f7f6;
-        --surface-hover: #f1f1f0;
-        --border: rgba(15, 15, 20, 0.08);
-        --border-strong: rgba(15, 15, 20, 0.14);
-        --text: #18181b;
-        --text-secondary: #52525b;
-        --text-muted: #8b8b95;
-        --accent: #5b5bd6;
-        --accent-soft: rgba(91, 91, 214, 0.1);
-        --accent-strong: #4f4fc9;
-        --success: #16a34a;
-        --warning: #d97706;
-        --danger: #dc2626;
-        --info: #2563eb;
-        --violet: #7c3aed;
-        --teal: #0d9488;
-        --radius-sm: 6px;
-        --radius: 8px;
-        --radius-lg: 12px;
-        --shadow-sm: 0 1px 2px rgba(15, 15, 20, 0.04);
-        --shadow: 0 1px 3px rgba(15, 15, 20, 0.06), 0 2px 8px rgba(15, 15, 20, 0.04);
+        --surface-2: #f0f0ee;
+        --surface-hover: #ececea;
+        --border: #e2e2dd;
+        --border-strong: #cdcdc6;
+        --text: #161613;
+        --text-secondary: #4a4a45;
+        --text-muted: #8a8a82;
+        --accent: #74a4bc;
+        --accent-soft: rgba(116, 164, 188, 0.14);
+        --accent-bg: #74a4bc;
+        --accent-fg: #0e1418;
+        --warning: #9c5500;
+        --warning-bg: #f5a623;
+        --warning-fg: #1a1206;
+        --violet: #6d4ec7;
+        --violet-bg: #b78cf5;
+        --info: #1c5fb3;
+        --info-bg: #6cb8ff;
+        --danger: #b8262b;
+        --danger-bg: #ef5454;
+        --neutral-bg: #d6d6d0;
+        --neutral-fg: #2a2a26;
       }
       .dark {
-        --bg: #0b0b0e;
-        --canvas: #0b0b0e;
-        --sidebar: #0e0e12;
-        --surface: #16161b;
-        --surface-2: #1a1a20;
-        --surface-hover: #1f1f26;
-        --border: rgba(255, 255, 255, 0.06);
-        --border-strong: rgba(255, 255, 255, 0.12);
-        --text: #f4f4f5;
-        --text-secondary: #a1a1aa;
-        --text-muted: #71717a;
-        --accent: #818cf8;
-        --accent-soft: rgba(129, 140, 248, 0.14);
-        --accent-strong: #a5b4fc;
-        --success: #4ade80;
-        --warning: #fbbf24;
-        --danger: #f87171;
-        --info: #60a5fa;
-        --violet: #c4b5fd;
-        --teal: #5eead4;
-        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-        --shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.2);
+        --bg: #080808;
+        --surface: #0d0d0d;
+        --surface-2: #121212;
+        --surface-hover: #181818;
+        --border: #1d1d1d;
+        --border-strong: #2c2c2c;
+        --text: #e8e8e6;
+        --text-secondary: #a3a39d;
+        --text-muted: #5a5a55;
+        --accent: #74a4bc;
+        --accent-soft: rgba(116, 164, 188, 0.14);
+        --accent-bg: #2c4452;
+        --accent-fg: #d5e6ef;
+        --warning: #f5a623;
+        --warning-bg: #6b4815;
+        --warning-fg: #f5d18a;
+        --violet: #b78cf5;
+        --violet-bg: #3b2b6b;
+        --info: #6cb8ff;
+        --info-bg: #1c3c66;
+        --danger: #ef5454;
+        --danger-bg: #5a1f1f;
+        --neutral-bg: #1f1f1d;
+        --neutral-fg: #a3a39d;
       }
 
       *,
@@ -78,366 +87,434 @@
       body {
         font-family:
           "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        background: var(--canvas);
+        background: var(--bg);
         color: var(--text);
+        font-size: 13px;
         line-height: 1.5;
         height: 100vh;
         height: 100dvh;
         overflow: hidden;
-        font-size: 14px;
       }
       ::selection {
-        background: var(--accent-soft);
+        background: var(--accent);
+        color: var(--accent-fg);
       }
       button {
         font-family: inherit;
+        color: inherit;
+      }
+      .mono {
+        font-family:
+          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
       }
 
+      /* ─────────────────────────────────────────────
+         LAYOUT
+         ───────────────────────────────────────────── */
       .shell {
         display: grid;
-        grid-template-columns: 260px 1fr;
+        grid-template-columns: 232px 1fr;
         height: 100%;
         overflow: hidden;
       }
 
-      /* ───────── Sidebar ───────── */
+      /* ─────────────────────────────────────────────
+         SIDEBAR
+         ───────────────────────────────────────────── */
       .sidebar {
-        background: var(--sidebar);
+        background: var(--surface);
         border-right: 1px solid var(--border);
         display: flex;
         flex-direction: column;
-        overflow: hidden;
         min-height: 0;
+        overflow: hidden;
       }
-      .sidebar-head {
+      .sidebar-header {
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--border);
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 14px 16px;
-        border-bottom: 1px solid var(--border);
         flex-shrink: 0;
       }
       .brand {
         display: inline-flex;
         align-items: center;
-        gap: 9px;
-        font-size: 14px;
+        gap: 10px;
+        font-family:
+          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
         font-weight: 600;
-        letter-spacing: -0.01em;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
         color: var(--text);
       }
       .brand-mark {
-        width: 22px;
-        height: 22px;
-        border-radius: 6px;
-        background: linear-gradient(135deg, var(--accent), var(--violet));
+        width: 10px;
+        height: 10px;
+        background: var(--accent);
+        flex-shrink: 0;
+      }
+
+      .icon-btn {
+        width: 26px;
+        height: 26px;
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--text-secondary);
+        cursor: pointer;
         display: grid;
         place-items: center;
-        color: white;
-        font-size: 12px;
-        font-weight: 700;
-        box-shadow: var(--shadow-sm);
+        transition: background 0.1s, color 0.1s, border-color 0.1s;
       }
+      .icon-btn:hover {
+        background: var(--surface-hover);
+        color: var(--text);
+        border-color: var(--border-strong);
+      }
+      .icon-btn svg {
+        width: 13px;
+        height: 13px;
+      }
+
       .sidebar-body {
         flex: 1;
         overflow-y: auto;
-        padding: 14px 10px 10px;
         min-height: 0;
       }
-      .sidebar-foot {
-        border-top: 1px solid var(--border);
-        padding: 10px 12px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        flex-shrink: 0;
-        background: var(--sidebar);
-      }
-      .sidebar-foot-meta {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 11px;
-        color: var(--text-muted);
-      }
-      .live-dot {
-        width: 7px;
-        height: 7px;
-        border-radius: 999px;
-        background: var(--text-muted);
-      }
-      .live-dot.connected {
-        background: var(--success);
-        box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.18);
-      }
 
-      .facet {
-        margin-bottom: 16px;
+      .sidebar-section {
+        border-bottom: 1px solid var(--border);
       }
-      .facet-header {
+      .sidebar-section:last-child {
+        border-bottom: none;
+      }
+      .sidebar-section-head {
+        padding: 12px 16px 6px;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 0 8px 6px;
       }
-      .facet-title {
-        font-size: 10px;
+      .sidebar-section-title {
+        font-family:
+          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 10.5px;
         font-weight: 600;
-        color: var(--text-muted);
-        letter-spacing: 0.08em;
+        letter-spacing: 0.12em;
         text-transform: uppercase;
+        color: var(--text-muted);
       }
-      .facet-clear {
-        font-size: 11px;
+      .sidebar-section-clear {
+        font-family:
+          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
         color: var(--accent);
         background: none;
         border: none;
         cursor: pointer;
         padding: 0;
       }
-      .facet-clear:hover {
+      .sidebar-section-clear:hover {
         text-decoration: underline;
       }
-      .facet-clear[hidden] {
+      .sidebar-section-clear[hidden] {
         display: none;
+      }
+      .sidebar-section-body {
+        padding-bottom: 10px;
       }
 
       .nav-item,
       .facet-item {
         display: flex;
         align-items: center;
-        gap: 9px;
+        gap: 10px;
         width: 100%;
-        padding: 6px 8px;
+        padding: 6px 16px;
         border: none;
-        border-radius: var(--radius-sm);
+        background: transparent;
+        color: var(--text-secondary);
         font: inherit;
         font-size: 13px;
-        color: var(--text-secondary);
-        background: transparent;
         text-align: left;
         cursor: pointer;
-        transition: background 0.12s, color 0.12s;
+        transition: background 0.1s, color 0.1s;
+        position: relative;
       }
       .nav-item:hover,
       .facet-item:hover {
         background: var(--surface-hover);
         color: var(--text);
       }
-      .nav-item.active {
-        background: var(--accent-soft);
-        color: var(--accent-strong);
-        font-weight: 500;
+      .nav-item.active,
+      .facet-item.active {
+        background: var(--surface-hover);
+        color: var(--text);
+      }
+      .nav-item.active::before,
+      .facet-item.active::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: var(--accent);
+      }
+      .nav-icon {
+        width: 14px;
+        height: 14px;
+        flex-shrink: 0;
+        color: var(--text-muted);
       }
       .nav-item.active .nav-icon {
         color: var(--accent);
       }
-      .nav-icon {
-        width: 15px;
-        height: 15px;
-        flex-shrink: 0;
-        opacity: 0.9;
-      }
-      .facet-item {
-        font-size: 12.5px;
-        padding: 5px 8px;
-      }
-      .facet-item.active {
-        background: var(--surface-hover);
-        color: var(--text);
-        font-weight: 500;
-      }
-      .facet-dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 999px;
-        flex-shrink: 0;
-        background: var(--text-muted);
-      }
+      .nav-label,
       .facet-label {
         flex: 1;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
       }
+      .facet-item {
+        font-size: 12.5px;
+        padding: 4px 16px 4px 16px;
+      }
+      .facet-label {
+        font-family:
+          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+      }
+      .nav-count,
       .facet-count {
-        font-variant-numeric: tabular-nums;
+        font-family:
+          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
         font-size: 11px;
         color: var(--text-muted);
-        background: var(--surface-2);
-        padding: 1px 6px;
-        border-radius: 999px;
-        min-width: 22px;
-        text-align: center;
+        font-variant-numeric: tabular-nums;
       }
+      .nav-item.active .nav-count,
       .facet-item.active .facet-count {
-        background: var(--surface-hover);
         color: var(--text-secondary);
       }
 
-      .icon-btn {
-        width: 28px;
-        height: 28px;
-        border-radius: var(--radius-sm);
-        border: 1px solid transparent;
-        background: transparent;
-        color: var(--text-secondary);
-        cursor: pointer;
-        display: grid;
-        place-items: center;
-        transition: background 0.12s, color 0.12s, border-color 0.12s;
+      .sidebar-foot {
+        padding: 10px 16px;
+        border-top: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        flex-shrink: 0;
+        font-family:
+          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 10.5px;
+        color: var(--text-muted);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        white-space: nowrap;
+        line-height: 1;
       }
-      .icon-btn:hover {
-        background: var(--surface-hover);
-        color: var(--text);
-        border-color: var(--border);
+      .sidebar-foot > * {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
-      .icon-btn svg {
-        width: 14px;
-        height: 14px;
+      .live {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        min-width: 0;
+      }
+      .live span:last-child {
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .live-dot {
+        width: 6px;
+        height: 6px;
+        background: var(--text-muted);
+        flex-shrink: 0;
+      }
+      .live-dot.connected {
+        background: var(--accent);
+        box-shadow: 0 0 0 1px var(--accent-soft);
+        animation: pulse-dot 2s ease-in-out infinite;
+      }
+      @keyframes pulse-dot {
+        0%, 100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.6;
+        }
       }
 
-      /* ───────── Main ───────── */
+      /* ─────────────────────────────────────────────
+         MAIN
+         ───────────────────────────────────────────── */
       .main {
         display: flex;
         flex-direction: column;
         min-width: 0;
         min-height: 0;
-        background: var(--canvas);
+        background: var(--bg);
       }
       .topbar {
         display: flex;
         align-items: center;
-        gap: 10px;
-        padding: 12px 24px;
+        gap: 16px;
+        padding: 0 20px;
+        height: 56px;
         border-bottom: 1px solid var(--border);
-        background: var(--bg);
+        background: var(--surface);
         flex-shrink: 0;
       }
       .topbar-title {
         display: flex;
-        align-items: baseline;
+        align-items: center;
         gap: 10px;
         margin-right: auto;
+        min-width: 0;
+      }
+      .topbar-glyph {
+        color: var(--accent);
+        font-size: 14px;
+        flex-shrink: 0;
       }
       .topbar-title h1 {
-        font-size: 15px;
+        font-size: 16px;
         font-weight: 600;
-        letter-spacing: -0.01em;
+        letter-spacing: -0.005em;
+        color: var(--text);
       }
       .topbar-meta {
-        font-size: 12.5px;
+        font-family:
+          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11.5px;
         color: var(--text-muted);
-        font-variant-numeric: tabular-nums;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
       }
+
       .search-wrap {
         position: relative;
-        width: 320px;
-        max-width: 40vw;
+        width: 280px;
+        max-width: 36vw;
       }
       .search-wrap svg {
         position: absolute;
-        left: 10px;
+        left: 9px;
         top: 50%;
         transform: translateY(-50%);
-        width: 14px;
-        height: 14px;
+        width: 13px;
+        height: 13px;
         color: var(--text-muted);
         pointer-events: none;
       }
       .kbd {
         position: absolute;
-        right: 8px;
+        right: 6px;
         top: 50%;
         transform: translateY(-50%);
-        font-family: "JetBrains Mono", ui-monospace, monospace;
-        font-size: 10.5px;
+        font-family:
+          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 10px;
         color: var(--text-muted);
         background: var(--surface-2);
         border: 1px solid var(--border);
-        border-radius: 4px;
         padding: 1px 5px;
         pointer-events: none;
       }
       .input {
         width: 100%;
-        height: 32px;
-        border-radius: var(--radius-sm);
+        height: 30px;
         border: 1px solid var(--border);
-        background: var(--surface);
+        background: var(--bg);
         color: var(--text);
         font: inherit;
-        font-size: 13px;
-        padding: 0 56px 0 32px;
+        font-size: 12.5px;
+        padding: 0 56px 0 28px;
         outline: none;
-        transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+        transition: border-color 0.12s;
       }
       .input::placeholder {
         color: var(--text-muted);
       }
       .input:focus {
         border-color: var(--accent);
-        background: var(--surface);
-        box-shadow: 0 0 0 3px var(--accent-soft);
+      }
+      .input:focus + .kbd {
+        opacity: 0;
       }
       .sort-select {
-        height: 32px;
-        padding: 0 28px 0 10px;
-        border-radius: var(--radius-sm);
+        height: 30px;
+        padding: 0 24px 0 10px;
         border: 1px solid var(--border);
-        background: var(--surface);
+        background: var(--bg);
         color: var(--text);
         font: inherit;
-        font-size: 12.5px;
+        font-family:
+          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
         cursor: pointer;
         appearance: none;
-        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
         background-repeat: no-repeat;
         background-position: right 8px center;
       }
       .sort-select:focus {
         outline: none;
         border-color: var(--accent);
-        box-shadow: 0 0 0 3px var(--accent-soft);
       }
 
-      /* Active filter chips */
+      /* Filter bar */
       .filter-bar {
         display: flex;
         align-items: center;
-        gap: 8px;
-        padding: 10px 24px;
+        gap: 6px;
+        padding: 8px 20px;
         border-bottom: 1px solid var(--border);
-        background: var(--bg);
+        background: var(--surface);
         flex-shrink: 0;
-        min-height: 44px;
+        min-height: 36px;
         flex-wrap: wrap;
       }
       .filter-bar-label {
-        font-size: 11.5px;
+        font-family:
+          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 10.5px;
         color: var(--text-muted);
-        font-weight: 500;
-        margin-right: 2px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin-right: 4px;
       }
       .filter-chip {
         display: inline-flex;
         align-items: center;
-        gap: 5px;
-        padding: 3px 4px 3px 9px;
-        border-radius: 999px;
-        background: var(--surface);
+        gap: 4px;
+        padding: 2px 3px 2px 7px;
+        background: var(--bg);
         border: 1px solid var(--border-strong);
+        font-family:
+          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
         color: var(--text);
-        font-size: 11.5px;
-        font-weight: 500;
       }
       .filter-chip-key {
         color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        font-size: 10.5px;
       }
       .filter-chip-x {
         width: 16px;
         height: 16px;
-        border-radius: 999px;
         background: transparent;
         border: none;
         cursor: pointer;
@@ -451,39 +528,42 @@
         color: var(--text);
       }
       .filter-chip-x svg {
-        width: 10px;
-        height: 10px;
+        width: 9px;
+        height: 9px;
+      }
+      .filter-bar-empty {
+        font-family:
+          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+        color: var(--text-muted);
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
       }
       .filter-clear-all {
         margin-left: auto;
-        font-size: 11.5px;
+        font-family:
+          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
         color: var(--text-muted);
         background: none;
         border: none;
         cursor: pointer;
-        padding: 4px 6px;
+        padding: 2px 4px;
       }
       .filter-clear-all:hover {
         color: var(--text);
-        text-decoration: underline;
-      }
-      .filter-bar-empty {
-        font-size: 12.5px;
-        color: var(--text-muted);
       }
 
-      /* Content area */
+      /* ─────────────────────────────────────────────
+         CONTENT
+         ───────────────────────────────────────────── */
       .content {
         flex: 1;
-        overflow-y: auto;
+        overflow: auto;
         min-height: 0;
-        padding: 16px 24px 60px;
       }
-      .content-inner {
-        max-width: 1100px;
-        margin: 0 auto;
-      }
-
       .view-panel {
         display: none;
       }
@@ -491,307 +571,369 @@
         display: block;
       }
 
-      /* ───────── Memory cards ───────── */
-      .card-stack {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
+      /* ─────────────────────────────────────────────
+         DATA TABLE
+         ───────────────────────────────────────────── */
+      .data-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        font-size: 13px;
       }
-      .card {
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-lg);
-        padding: 16px 18px;
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-        transition: border-color 0.15s, box-shadow 0.15s;
-        min-width: 0;
-      }
-      .card:hover {
-        border-color: var(--border-strong);
-        box-shadow: var(--shadow-sm);
-      }
-      .card.expanded {
-        border-color: var(--border-strong);
-        box-shadow: var(--shadow);
-      }
-      .card-meta-row {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        flex-wrap: wrap;
-        font-size: 11.5px;
+      .data-table thead th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        text-align: left;
+        padding: 9px 14px;
+        font-family:
+          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 10.5px;
+        font-weight: 500;
         color: var(--text-muted);
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        background: var(--surface);
+        border-bottom: 1px solid var(--border-strong);
+        border-right: 1px solid var(--border);
+        white-space: nowrap;
+        user-select: none;
       }
-      .card-meta-row > * {
-        flex-shrink: 0;
+      .data-table thead th:last-child {
+        border-right: none;
       }
-      .agent-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 5px;
-        padding: 2px 8px;
-        border-radius: 999px;
-        background: var(--surface-2);
+      .data-table thead th.num {
+        text-align: right;
+      }
+      .data-table tbody td {
+        padding: 11px 14px;
+        border-bottom: 1px solid var(--border);
+        border-right: 1px solid var(--border);
+        vertical-align: middle;
         color: var(--text);
-        font-size: 11.5px;
-        font-weight: 500;
-        border: 1px solid var(--border);
       }
-      .agent-badge::before {
-        content: "";
-        width: 6px;
-        height: 6px;
-        border-radius: 999px;
-        background: var(--accent);
+      .data-table tbody td:last-child {
+        border-right: none;
       }
-      .source-chip {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        font-size: 11px;
-        font-weight: 500;
-        padding: 2px 7px;
-        border-radius: 4px;
-        background: var(--surface-2);
-        border: 1px solid var(--border);
-        color: var(--text-secondary);
-        text-transform: capitalize;
+      .data-table tbody tr {
+        position: relative;
       }
-      .source-chip.explicit {
-        color: var(--accent);
-        background: var(--accent-soft);
-        border-color: transparent;
+      .data-table tbody tr.row:hover td {
+        background: var(--surface);
       }
-      .source-chip.heuristic {
-        color: var(--warning);
-        background: color-mix(in srgb, var(--warning) 12%, transparent);
-        border-color: transparent;
+      .data-table tbody tr.row.expanded > td {
+        background: var(--surface);
       }
-      .source-chip.repetition {
-        color: var(--success);
-        background: color-mix(in srgb, var(--success) 12%, transparent);
-        border-color: transparent;
-      }
-      .source-chip.llm_extracted {
-        color: var(--violet);
-        background: color-mix(in srgb, var(--violet) 12%, transparent);
-        border-color: transparent;
-      }
-      .source-chip.consolidated {
-        color: var(--teal);
-        background: color-mix(in srgb, var(--teal) 14%, transparent);
-        border-color: transparent;
-      }
-      .meta-dot {
-        width: 3px;
-        height: 3px;
-        border-radius: 999px;
-        background: var(--text-muted);
-        opacity: 0.5;
-      }
-      .card-time {
-        font-variant-numeric: tabular-nums;
-      }
-      .retrieval-pill {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        font-size: 11.5px;
-        color: var(--text-secondary);
-        font-variant-numeric: tabular-nums;
-      }
-      .retrieval-pill svg {
-        width: 11px;
-        height: 11px;
-        opacity: 0.7;
-      }
-      .retrieval-pill.hot {
-        color: var(--warning);
-      }
-      .retrieval-pill.hot svg {
-        opacity: 1;
+      .data-table tbody tr.row.expanded > td:first-child {
+        box-shadow: inset 2px 0 0 var(--accent);
       }
 
-      .card-text {
-        font-size: 14.5px;
-        line-height: 1.55;
-        color: var(--text);
-        white-space: pre-wrap;
-        word-break: break-word;
-        letter-spacing: -0.005em;
-      }
-      .card-text.clamped {
-        display: -webkit-box;
-        -webkit-line-clamp: 4;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-      }
-
-      .card-footer {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        flex-wrap: wrap;
-      }
-      .category-row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 5px;
-        flex: 1;
-        min-width: 0;
-      }
-      .tag {
-        display: inline-flex;
-        align-items: center;
-        height: 20px;
-        padding: 0 7px;
-        border-radius: 4px;
-        font-size: 11px;
-        font-weight: 500;
-        background: var(--surface-2);
-        color: var(--text-secondary);
-        border: 1px solid var(--border);
-        font-variant-numeric: tabular-nums;
+      .col-expand {
+        width: 28px;
+        padding: 0 !important;
+        text-align: center;
         cursor: pointer;
-        transition: background 0.12s;
       }
-      .tag:hover {
-        background: var(--surface-hover);
-        color: var(--text);
-      }
-
-      .card-actions {
-        display: flex;
-        align-items: center;
-        gap: 4px;
-      }
-      .link-btn {
+      .caret {
+        width: 28px;
+        height: 100%;
+        min-height: 36px;
+        display: grid;
+        place-items: center;
         background: none;
         border: none;
-        font: inherit;
-        font-size: 11.5px;
-        font-weight: 500;
-        color: var(--text-muted);
         cursor: pointer;
-        padding: 4px 8px;
-        border-radius: 4px;
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        transition: background 0.12s, color 0.12s;
+        color: var(--text-muted);
+        transition: color 0.12s;
       }
-      .link-btn:hover {
-        background: var(--surface-hover);
+      .caret:hover {
         color: var(--text);
       }
-      .link-btn svg {
-        width: 11px;
-        height: 11px;
-      }
-      .link-btn.primary {
-        color: var(--accent);
-      }
-      .link-btn.primary:hover {
-        background: var(--accent-soft);
-      }
-      .link-btn .chev {
+      .caret svg {
+        width: 9px;
+        height: 9px;
         transition: transform 0.18s ease;
       }
-      .link-btn.open .chev {
-        transform: rotate(180deg);
+      tr.row.expanded .caret svg {
+        transform: rotate(90deg);
+        color: var(--accent);
+      }
+      tr.row.expanded .caret {
+        color: var(--accent);
       }
 
-      .meta-detail {
-        margin-top: 4px;
-        padding: 12px 14px;
-        border-radius: var(--radius);
-        background: var(--surface-2);
-        border: 1px solid var(--border);
-        display: grid;
-        gap: 10px;
+      .col-memory {
+        max-width: 0; /* let table layout do its thing */
       }
-      .meta-grid {
-        display: grid;
-        grid-template-columns: max-content 1fr;
-        gap: 6px 14px;
-        font-size: 12px;
+      .row-text {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        line-height: 1.45;
+        color: var(--text);
       }
-      .meta-grid dt {
-        color: var(--text-muted);
+      tr.row.expanded .row-text {
+        display: block;
+        -webkit-line-clamp: unset;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .col-source,
+      .col-agent {
+        width: 130px;
+      }
+      .col-num {
+        width: 80px;
+        text-align: right;
+      }
+      .col-created {
+        width: 110px;
+      }
+
+      /* Source pill — solid block, mono uppercase */
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        height: 18px;
+        padding: 0 6px;
+        background: var(--neutral-bg);
+        color: var(--neutral-fg);
+        font-family:
+          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 10.5px;
         font-weight: 500;
-        text-transform: lowercase;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+      .pill.explicit {
+        background: var(--accent-bg);
+        color: var(--accent-fg);
+      }
+      .pill.heuristic {
+        background: var(--warning-bg);
+        color: var(--warning-fg);
+      }
+      .pill.repetition {
+        background: var(--info-bg);
+        color: var(--info-fg, var(--info));
+      }
+      .dark .pill.repetition {
+        color: #d4ebff;
+      }
+      .pill.llm_extracted {
+        background: var(--violet-bg);
+        color: #ece1ff;
+      }
+      .pill.consolidated {
+        background: var(--accent-soft);
+        color: var(--accent);
+      }
+
+      .agent-text {
+        font-family:
+          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+        color: var(--text);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        display: inline-block;
+        max-width: 110px;
+        vertical-align: middle;
+      }
+      .num-cell {
+        font-family:
+          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12.5px;
+        color: var(--text);
         font-variant-numeric: tabular-nums;
       }
-      .meta-grid dd {
-        color: var(--text);
-        font-family: "JetBrains Mono", ui-monospace, monospace;
+      .num-cell.zero {
+        color: var(--text-muted);
+      }
+      .num-cell.hot {
+        color: var(--warning);
+      }
+      .time-cell {
+        font-family:
+          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
         font-size: 11.5px;
+        color: var(--text-secondary);
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* ─────────────────────────────────────────────
+         DETAIL ROW
+         ───────────────────────────────────────────── */
+      tr.row-detail > td {
+        padding: 0 !important;
+        background: var(--surface) !important;
+        border-bottom: 1px solid var(--border-strong);
+        border-right: none !important;
+        box-shadow: inset 2px 0 0 var(--accent);
+      }
+      .detail {
+        padding: 16px 20px 20px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 320px;
+        gap: 28px;
+      }
+      .detail-section-title {
+        font-family:
+          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        margin-bottom: 8px;
+      }
+      .detail-text {
+        font-size: 13.5px;
+        line-height: 1.6;
+        white-space: pre-wrap;
+        word-break: break-word;
+        color: var(--text);
+        margin-bottom: 18px;
+      }
+      .detail-categories {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-bottom: 18px;
+      }
+      .cat-tag {
+        font-family:
+          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+        padding: 1px 6px;
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        color: var(--text-secondary);
+        cursor: pointer;
+      }
+      .cat-tag:hover {
+        background: var(--surface-hover);
+        color: var(--text);
+        border-color: var(--border-strong);
+      }
+
+      .detail-side {
+        border-left: 1px solid var(--border);
+        padding-left: 24px;
+      }
+      .kv-grid {
+        display: grid;
+        grid-template-columns: max-content 1fr;
+        gap: 5px 14px;
+        font-size: 11.5px;
+        margin-bottom: 18px;
+      }
+      .kv-grid dt {
+        font-family:
+          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: var(--text-muted);
+        letter-spacing: 0.04em;
+        text-transform: lowercase;
+      }
+      .kv-grid dd {
+        font-family:
+          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: var(--text);
         word-break: break-word;
         overflow-wrap: anywhere;
       }
-      .meta-section-title {
-        font-size: 10px;
-        font-weight: 600;
-        color: var(--text-muted);
-        letter-spacing: 0.08em;
+      .kv-grid dd .copy-id {
+        background: none;
+        border: none;
+        color: var(--accent);
+        cursor: pointer;
+        padding: 0 0 0 6px;
+        font: inherit;
+        font-size: 10.5px;
         text-transform: uppercase;
+        letter-spacing: 0.06em;
+        opacity: 0.7;
       }
-      .meta-json {
-        padding: 10px 12px;
-        border-radius: var(--radius-sm);
-        background: var(--canvas);
-        border: 1px solid var(--border);
-        font-family: "JetBrains Mono", ui-monospace, monospace;
-        font-size: 11px;
-        line-height: 1.55;
-        color: var(--text-secondary);
-        white-space: pre-wrap;
-        word-break: break-word;
-        overflow-x: auto;
+      .kv-grid dd .copy-id:hover {
+        opacity: 1;
       }
 
-      .confidence-bar {
+      .meter {
         display: inline-flex;
         align-items: center;
         gap: 6px;
-        font-size: 11.5px;
+        font-family:
+          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
         color: var(--text-secondary);
-        font-variant-numeric: tabular-nums;
       }
-      .confidence-track {
-        width: 42px;
+      .meter-track {
+        width: 56px;
         height: 4px;
-        background: var(--surface-hover);
-        border-radius: 999px;
-        overflow: hidden;
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        position: relative;
       }
-      .confidence-fill {
-        height: 100%;
+      .meter-fill {
+        position: absolute;
+        inset: 0 auto 0 0;
         background: var(--accent);
-        border-radius: 999px;
       }
-      .confidence-fill.low {
+      .meter-fill.low {
         background: var(--warning);
       }
-      .confidence-fill.high {
-        background: var(--success);
+
+      .json-block {
+        font-family:
+          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+        line-height: 1.55;
+        padding: 10px 12px;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        color: var(--text-secondary);
+        white-space: pre-wrap;
+        word-break: break-word;
+        max-height: 240px;
+        overflow: auto;
       }
 
-      /* ───────── Skeletons ───────── */
-      .skeleton-card {
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-lg);
-        padding: 16px 18px;
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
+      /* Empty / error */
+      .empty {
+        padding: 80px 24px;
+        text-align: center;
+        color: var(--text-muted);
+        font-size: 13px;
       }
+      .empty strong {
+        display: block;
+        color: var(--text);
+        font-size: 14px;
+        font-weight: 600;
+        margin-bottom: 6px;
+        font-family:
+          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .error {
+        padding: 40px 24px;
+        text-align: center;
+        color: var(--danger);
+        font-family:
+          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        border-bottom: 1px solid var(--border);
+      }
+
+      /* Skeleton */
       .skel {
-        height: 10px;
-        border-radius: 4px;
         background: var(--surface-hover);
         animation: pulse 1.5s ease-in-out infinite;
       }
@@ -800,100 +942,28 @@
         50% { opacity: 0.5; }
       }
 
-      /* ───────── Entities table ───────── */
-      .entity-panel {
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-lg);
-        overflow: hidden;
-      }
-      .entity-table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 13px;
-      }
-      .entity-table thead th {
-        text-align: left;
-        padding: 11px 16px;
-        font-size: 11px;
-        font-weight: 600;
-        color: var(--text-muted);
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
-        border-bottom: 1px solid var(--border);
-        background: var(--surface-2);
-      }
-      .entity-table tbody td {
-        padding: 12px 16px;
-        border-bottom: 1px solid var(--border);
-        color: var(--text);
-        vertical-align: middle;
-      }
-      .entity-table tbody tr:last-child td {
-        border-bottom: none;
-      }
-      .entity-table tbody tr:hover td {
-        background: var(--surface-2);
-      }
-      .entity-table .num {
-        text-align: right;
-        font-variant-numeric: tabular-nums;
-        color: var(--text-secondary);
-      }
-      .scope-mono {
-        font-family: "JetBrains Mono", ui-monospace, monospace;
-        font-size: 11.5px;
-        color: var(--text-secondary);
-      }
+      /* Entities table — reuse data-table styles */
 
-      .empty-state {
-        text-align: center;
-        padding: 64px 24px;
-        color: var(--text-muted);
-        font-size: 13.5px;
-        background: var(--surface);
-        border: 1px dashed var(--border-strong);
-        border-radius: var(--radius-lg);
-      }
-      .empty-state strong {
-        display: block;
-        font-size: 14.5px;
-        color: var(--text);
-        font-weight: 600;
-        margin-bottom: 4px;
-      }
-      .error-state {
-        text-align: center;
-        padding: 32px;
-        color: var(--danger);
-        background: color-mix(in srgb, var(--danger) 8%, transparent);
-        border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
-        border-radius: var(--radius-lg);
-        font-size: 13.5px;
-      }
-
-      /* Tooltip */
-      [data-tip] {
-        position: relative;
-      }
-
-      /* ───────── Responsive ───────── */
-      @media (max-width: 900px) {
+      /* Responsive */
+      @media (max-width: 960px) {
         .shell {
           grid-template-columns: 1fr;
         }
         .sidebar {
           display: none;
         }
-        .search-wrap {
-          width: 100%;
-          max-width: none;
+        .col-source,
+        .col-agent {
+          display: none;
         }
-        .topbar {
-          flex-wrap: wrap;
+        .detail {
+          grid-template-columns: 1fr;
         }
-        .content {
-          padding: 14px 16px 40px;
+        .detail-side {
+          border-left: none;
+          border-top: 1px solid var(--border);
+          padding-left: 0;
+          padding-top: 16px;
         }
       }
     </style>
@@ -901,16 +971,17 @@
   <body>
     <div class="shell">
       <aside class="sidebar">
-        <div class="sidebar-head">
-          <div class="brand">
-            <span class="brand-mark">N</span>
-            <span>Noodle</span>
-          </div>
+        <div class="sidebar-header">
+          <span class="brand">
+            <span class="brand-mark"></span>
+            Noodle
+          </span>
           <button
             class="icon-btn"
             id="theme-toggle"
             type="button"
             aria-label="Toggle theme"
+            title="Toggle theme"
           >
             <svg
               id="icon-moon"
@@ -942,109 +1013,115 @@
         </div>
 
         <div class="sidebar-body">
-          <div class="facet" id="facet-nav">
-            <div class="facet-header">
-              <span class="facet-title">Library</span>
+          <div class="sidebar-section">
+            <div class="sidebar-section-head">
+              <span class="sidebar-section-title">View</span>
             </div>
-            <button type="button" class="nav-item active" data-view="memories">
-              <svg
-                class="nav-icon"
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path d="M12 2a7 7 0 0 1 7 7c0 2.5-1.3 4.7-3.2 6.1L16 21H8l-.8-5.9A7 7 0 0 1 12 2z" />
-              </svg>
-              <span class="facet-label">Memories</span>
-              <span class="facet-count" id="nav-count-memories">—</span>
-            </button>
-            <button type="button" class="nav-item" data-view="entities">
-              <svg
-                class="nav-icon"
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-                <circle cx="9" cy="7" r="4" />
-                <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
-                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-              </svg>
-              <span class="facet-label">Entities</span>
-              <span class="facet-count" id="nav-count-entities">—</span>
-            </button>
+            <div class="sidebar-section-body">
+              <button type="button" class="nav-item active" data-view="memories">
+                <svg
+                  class="nav-icon"
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.75"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <rect x="3" y="3" width="7" height="7" />
+                  <rect x="14" y="3" width="7" height="7" />
+                  <rect x="3" y="14" width="7" height="7" />
+                  <rect x="14" y="14" width="7" height="7" />
+                </svg>
+                <span class="nav-label">Memories</span>
+                <span class="nav-count" id="nav-count-memories">—</span>
+              </button>
+              <button type="button" class="nav-item" data-view="entities">
+                <svg
+                  class="nav-icon"
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.75"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                </svg>
+                <span class="nav-label">Entities</span>
+                <span class="nav-count" id="nav-count-entities">—</span>
+              </button>
+            </div>
           </div>
 
-          <div class="facet">
-            <div class="facet-header">
-              <span class="facet-title">Categories</span>
+          <div class="sidebar-section">
+            <div class="sidebar-section-head">
+              <span class="sidebar-section-title">Category</span>
               <button
                 type="button"
-                class="facet-clear"
+                class="sidebar-section-clear"
                 data-clear="categories"
                 hidden
               >
                 Clear
               </button>
             </div>
-            <div id="facet-categories"></div>
+            <div class="sidebar-section-body" id="facet-categories"></div>
           </div>
 
-          <div class="facet">
-            <div class="facet-header">
-              <span class="facet-title">Source</span>
+          <div class="sidebar-section">
+            <div class="sidebar-section-head">
+              <span class="sidebar-section-title">Source</span>
               <button
                 type="button"
-                class="facet-clear"
+                class="sidebar-section-clear"
                 data-clear="sources"
                 hidden
               >
                 Clear
               </button>
             </div>
-            <div id="facet-sources"></div>
+            <div class="sidebar-section-body" id="facet-sources"></div>
           </div>
 
-          <div class="facet">
-            <div class="facet-header">
-              <span class="facet-title">Agents</span>
+          <div class="sidebar-section">
+            <div class="sidebar-section-head">
+              <span class="sidebar-section-title">Agent</span>
               <button
                 type="button"
-                class="facet-clear"
+                class="sidebar-section-clear"
                 data-clear="agents"
                 hidden
               >
                 Clear
               </button>
             </div>
-            <div id="facet-agents"></div>
+            <div class="sidebar-section-body" id="facet-agents"></div>
           </div>
         </div>
 
         <div class="sidebar-foot">
-          <div
-            class="sidebar-foot-meta"
+          <span
+            class="live"
             id="live-status"
             title="Live link to the local explorer server. Drops when the server stops or the connection is interrupted."
           >
             <span class="live-dot" id="live-dot"></span>
-            <span id="live-label">Connecting…</span>
-          </div>
-          <span class="sidebar-foot-meta" id="last-updated"></span>
+            <span id="live-label">Connecting</span>
+          </span>
+          <span id="last-updated" title="Last synced"></span>
         </div>
       </aside>
 
       <main class="main">
         <div class="topbar">
           <div class="topbar-title">
+            <span class="topbar-glyph">▸</span>
             <h1 id="page-title">Memories</h1>
             <span class="topbar-meta" id="result-label"></span>
           </div>
@@ -1065,7 +1142,7 @@
               type="text"
               id="search"
               class="input"
-              placeholder="Search memories, metadata, or scopes…"
+              placeholder="Filter by text, scope, source…"
               autocomplete="off"
               spellcheck="false"
             />
@@ -1086,27 +1163,35 @@
         </div>
 
         <div class="content">
-          <div class="content-inner">
-            <div id="view-memories" class="view-panel active">
-              <div id="memories" class="card-stack"></div>
-            </div>
+          <div id="view-memories" class="view-panel active">
+            <table class="data-table" id="memories-table">
+              <thead>
+                <tr>
+                  <th class="col-expand"></th>
+                  <th>Memory</th>
+                  <th class="col-source">Source</th>
+                  <th class="col-agent">Agent</th>
+                  <th class="col-num num">Retrievals</th>
+                  <th class="col-created">Created</th>
+                </tr>
+              </thead>
+              <tbody id="memories"></tbody>
+            </table>
+          </div>
 
-            <div id="view-entities" class="view-panel">
-              <div class="entity-panel">
-                <table class="entity-table">
-                  <thead>
-                    <tr>
-                      <th>Agent</th>
-                      <th>User</th>
-                      <th>Session</th>
-                      <th class="num">Memories</th>
-                      <th class="num">Retrievals</th>
-                    </tr>
-                  </thead>
-                  <tbody id="entities"></tbody>
-                </table>
-              </div>
-            </div>
+          <div id="view-entities" class="view-panel">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Agent</th>
+                  <th>User</th>
+                  <th>Session</th>
+                  <th class="col-num num">Memories</th>
+                  <th class="col-num num">Retrievals</th>
+                </tr>
+              </thead>
+              <tbody id="entities"></tbody>
+            </table>
           </div>
         </div>
       </main>
@@ -1134,21 +1219,18 @@
         shuttingDown = false;
 
       // ─────────────────────────────────────────────
-      // WebSocket (hot reload + presence)
+      // WebSocket
       // ─────────────────────────────────────────────
       function setLive(connected) {
         const dot = document.getElementById("live-dot");
         const label = document.getElementById("live-label");
         dot.classList.toggle("connected", !!connected);
-        label.textContent = connected ? "Connected" : "Reconnecting…";
+        label.textContent = connected ? "Connected" : "Reconnecting";
       }
-
       function disconnect() {
         shuttingDown = true;
-        if (pingTimer) {
-          clearInterval(pingTimer);
-          pingTimer = null;
-        }
+        if (pingTimer) clearInterval(pingTimer);
+        pingTimer = null;
         if (ws && ws.readyState === WebSocket.OPEN) {
           try {
             ws.send(JSON.stringify({ type: "bye" }));
@@ -1156,34 +1238,29 @@
           ws.close(1000, "tab closed");
         }
       }
-
       function connect() {
         if (shuttingDown) return;
         ws = new WebSocket("ws://" + location.host);
-        ws.onopen = function () {
+        ws.onopen = () => {
           setLive(true);
           if (pingTimer) clearInterval(pingTimer);
-          pingTimer = setInterval(function () {
-            if (ws.readyState === WebSocket.OPEN) {
+          pingTimer = setInterval(() => {
+            if (ws.readyState === WebSocket.OPEN)
               ws.send(JSON.stringify({ type: "ping" }));
-            }
           }, 4000);
         };
-        ws.onmessage = function (e) {
+        ws.onmessage = (e) => {
           try {
             const msg = JSON.parse(e.data);
             if (msg.type === "reload") location.reload();
           } catch (_) {}
         };
-        ws.onclose = function () {
+        ws.onclose = () => {
           setLive(false);
-          if (pingTimer) {
-            clearInterval(pingTimer);
-            pingTimer = null;
-          }
-          if (!shuttingDown && document.visibilityState !== "hidden") {
+          if (pingTimer) clearInterval(pingTimer);
+          pingTimer = null;
+          if (!shuttingDown && document.visibilityState !== "hidden")
             setTimeout(connect, 1000);
-          }
         };
       }
       connect();
@@ -1213,30 +1290,25 @@
       // Utilities
       // ─────────────────────────────────────────────
       function escapeHtml(t) {
-        return String(t).replace(/[<>&"']/g, function (c) {
-          return {
-            "<": "&lt;",
-            ">": "&gt;",
-            "&": "&amp;",
-            '"': "&quot;",
-            "'": "&#39;",
-          }[c];
-        });
+        return String(t == null ? "" : t).replace(/[<>&"']/g, (c) => ({
+          "<": "&lt;",
+          ">": "&gt;",
+          "&": "&amp;",
+          '"': "&quot;",
+          "'": "&#39;",
+        })[c]);
       }
-
       function formatRelative(value) {
         if (!value) return "";
-        const d = new Date(value);
-        const diff = (Date.now() - d.getTime()) / 1000;
-        if (diff < 60) return "just now";
-        if (diff < 3600) return Math.floor(diff / 60) + "m ago";
-        if (diff < 86400) return Math.floor(diff / 3600) + "h ago";
-        if (diff < 86400 * 30) return Math.floor(diff / 86400) + "d ago";
+        const diff = (Date.now() - new Date(value).getTime()) / 1000;
+        if (diff < 60) return "now";
+        if (diff < 3600) return Math.floor(diff / 60) + "m";
+        if (diff < 86400) return Math.floor(diff / 3600) + "h";
+        if (diff < 86400 * 30) return Math.floor(diff / 86400) + "d";
         if (diff < 86400 * 365)
-          return Math.floor(diff / (86400 * 30)) + "mo ago";
-        return Math.floor(diff / (86400 * 365)) + "y ago";
+          return Math.floor(diff / (86400 * 30)) + "mo";
+        return Math.floor(diff / (86400 * 365)) + "y";
       }
-
       function formatAbsolute(value) {
         if (!value) return "";
         return new Date(value).toLocaleString(undefined, {
@@ -1247,7 +1319,6 @@
           minute: "2-digit",
         });
       }
-
       function agentOf(m) {
         return (m.scope && m.scope.assistantId) || "default";
       }
@@ -1263,40 +1334,46 @@
       // Data load
       // ─────────────────────────────────────────────
       function showSkeleton() {
-        const skelCard = `
-          <div class="skeleton-card">
-            <div class="skel" style="width:40%"></div>
-            <div class="skel" style="width:95%; height:14px"></div>
-            <div class="skel" style="width:80%; height:14px"></div>
-            <div class="skel" style="width:30%"></div>
-          </div>`;
-        document.getElementById("memories").innerHTML = skelCard
-          .repeat(4)
-          .toString();
+        const host = document.getElementById("memories");
+        const row = `
+          <tr class="row">
+            <td class="col-expand"></td>
+            <td><div class="skel" style="height:12px;width:80%"></div><div class="skel" style="height:10px;width:60%;margin-top:6px"></div></td>
+            <td class="col-source"><div class="skel" style="height:14px;width:60px"></div></td>
+            <td class="col-agent"><div class="skel" style="height:12px;width:80px"></div></td>
+            <td class="col-num num"><div class="skel" style="height:12px;width:24px;margin-left:auto"></div></td>
+            <td class="col-created"><div class="skel" style="height:12px;width:48px"></div></td>
+          </tr>`;
+        host.innerHTML = row.repeat(5);
       }
 
       async function load() {
         showSkeleton();
         try {
           const r = await fetch("/api/memories");
-          if (!r.ok) throw new Error("Request failed");
+          if (!r.ok) throw new Error("HTTP " + r.status);
           const data = await r.json();
           if (!Array.isArray(data)) throw new Error("Invalid response");
           state.memories = data;
           document.getElementById("last-updated").textContent =
-            "Synced " + new Date().toLocaleTimeString();
+            new Date().toLocaleTimeString(undefined, {
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+              hour12: false,
+            });
           renderFacets();
           renderAll();
-        } catch {
+        } catch (err) {
+          console.error("Failed to load memories:", err);
           document.getElementById("memories").innerHTML =
-            '<div class="error-state">Failed to load memories. Check that the database is accessible.</div>';
-          document.getElementById("result-label").textContent =
-            "Unable to load data";
+            '<tr><td colspan="6"><div class="error">Failed to load · check that the database is accessible</div></td></tr>';
+          document.getElementById("result-label").textContent = "Load error";
         }
       }
 
       // ─────────────────────────────────────────────
-      // Filtering / sorting
+      // Filter / sort
       // ─────────────────────────────────────────────
       function applyFilters(list) {
         const q = state.query.toLowerCase().trim();
@@ -1325,16 +1402,19 @@
               }
             if (!hit) return false;
           }
-          if (state.selected.sources.size) {
-            if (!state.selected.sources.has(sourceOf(m))) return false;
-          }
-          if (state.selected.agents.size) {
-            if (!state.selected.agents.has(agentOf(m))) return false;
-          }
+          if (
+            state.selected.sources.size &&
+            !state.selected.sources.has(sourceOf(m))
+          )
+            return false;
+          if (
+            state.selected.agents.size &&
+            !state.selected.agents.has(agentOf(m))
+          )
+            return false;
           return true;
         });
       }
-
       function sortMemories(list) {
         const arr = [...list];
         switch (state.sort) {
@@ -1358,7 +1438,7 @@
       }
 
       // ─────────────────────────────────────────────
-      // Facets (sidebar)
+      // Facets
       // ─────────────────────────────────────────────
       function countBy(items, getter) {
         const map = new Map();
@@ -1371,18 +1451,7 @@
         });
         return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
       }
-
-      const SOURCE_COLORS = {
-        explicit: "var(--accent)",
-        heuristic: "var(--warning)",
-        repetition: "var(--success)",
-        llm_extracted: "var(--violet)",
-        consolidated: "var(--teal)",
-        unknown: "var(--text-muted)",
-      };
-
       function renderFacets() {
-        // Update sidebar nav counts
         document.getElementById("nav-count-memories").textContent =
           state.memories.length;
         document.getElementById("nav-count-entities").textContent =
@@ -1392,56 +1461,40 @@
         const srcs = countBy(state.memories, (m) => sourceOf(m));
         const agents = countBy(state.memories, (m) => agentOf(m));
 
-        document.getElementById("facet-categories").innerHTML = renderFacetList(
-          cats,
-          "categories",
-        );
+        document.getElementById("facet-categories").innerHTML =
+          renderFacetList(cats, "categories");
         document.getElementById("facet-sources").innerHTML = renderFacetList(
           srcs,
           "sources",
-          (key) => SOURCE_COLORS[key] || "var(--text-muted)",
         );
         document.getElementById("facet-agents").innerHTML = renderFacetList(
           agents,
           "agents",
         );
-
-        document
-          .querySelectorAll(".facet-clear")
-          .forEach(
-            (btn) =>
-              (btn.hidden =
-                !state.selected[btn.getAttribute("data-clear")].size),
-          );
+        document.querySelectorAll(".sidebar-section-clear").forEach((btn) => {
+          btn.hidden = !state.selected[btn.getAttribute("data-clear")].size;
+        });
       }
-
-      function renderFacetList(entries, group, colorFor) {
-        if (!entries.length) {
-          return `<div style="padding:4px 8px;font-size:12px;color:var(--text-muted)">None yet</div>`;
-        }
+      function renderFacetList(entries, group) {
+        if (!entries.length)
+          return `<div style="padding:4px 16px;font-family:var(--mono);font-size:11px;color:var(--text-muted)">—</div>`;
         return entries
           .map(([key, count]) => {
             const active = state.selected[group].has(key);
-            const color = colorFor ? colorFor(key) : "var(--text-muted)";
-            return `
-              <button type="button" class="facet-item${active ? " active" : ""}" data-facet="${group}" data-key="${escapeHtml(key)}">
-                <span class="facet-dot" style="background:${color}"></span>
-                <span class="facet-label">${escapeHtml(key)}</span>
-                <span class="facet-count">${count}</span>
-              </button>`;
+            return `<button type="button" class="facet-item${active ? " active" : ""}" data-facet="${group}" data-key="${escapeHtml(key)}">
+              <span class="facet-label">${escapeHtml(key)}</span>
+              <span class="facet-count">${count}</span>
+            </button>`;
           })
           .join("");
       }
-
       function toggleFacet(group, key) {
         const set = state.selected[group];
         if (set.has(key)) set.delete(key);
         else set.add(key);
         renderAll();
         renderFacets();
-        renderActiveFilters();
       }
-
       document
         .getElementById("facet-categories")
         .addEventListener("click", onFacetClick);
@@ -1454,34 +1507,34 @@
       function onFacetClick(e) {
         const btn = e.target.closest("[data-facet]");
         if (!btn) return;
-        toggleFacet(btn.getAttribute("data-facet"), btn.getAttribute("data-key"));
+        toggleFacet(
+          btn.getAttribute("data-facet"),
+          btn.getAttribute("data-key"),
+        );
       }
-
-      document.querySelectorAll(".facet-clear").forEach((btn) =>
+      document.querySelectorAll(".sidebar-section-clear").forEach((btn) =>
         btn.addEventListener("click", () => {
           state.selected[btn.getAttribute("data-clear")].clear();
           renderAll();
           renderFacets();
-          renderActiveFilters();
         }),
       );
 
       // ─────────────────────────────────────────────
-      // Active filter bar
+      // Filter bar
       // ─────────────────────────────────────────────
       const FACET_LABELS = {
-        categories: "Category",
-        sources: "Source",
-        agents: "Agent",
+        categories: "CAT",
+        sources: "SRC",
+        agents: "AGENT",
       };
-
       function renderActiveFilters() {
         const bar = document.getElementById("filter-bar");
         const chips = [];
         for (const group of ["categories", "sources", "agents"]) {
           for (const val of state.selected[group]) {
             chips.push(
-              `<span class="filter-chip"><span class="filter-chip-key">${FACET_LABELS[group]}:</span> ${escapeHtml(val)}<button type="button" class="filter-chip-x" data-remove-facet="${group}" data-key="${escapeHtml(val)}" aria-label="Remove">
+              `<span class="filter-chip"><span class="filter-chip-key">${FACET_LABELS[group]}</span>${escapeHtml(val)}<button type="button" class="filter-chip-x" data-remove-facet="${group}" data-key="${escapeHtml(val)}" aria-label="Remove">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
               </button></span>`,
             );
@@ -1489,22 +1542,20 @@
         }
         if (state.query.trim()) {
           chips.push(
-            `<span class="filter-chip"><span class="filter-chip-key">Search:</span> "${escapeHtml(state.query.trim())}"<button type="button" class="filter-chip-x" data-clear-search aria-label="Clear search">
+            `<span class="filter-chip"><span class="filter-chip-key">QUERY</span>${escapeHtml(state.query.trim())}<button type="button" class="filter-chip-x" data-clear-search aria-label="Clear">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
             </button></span>`,
           );
         }
-
         if (!chips.length) {
-          bar.innerHTML = `<span class="filter-bar-empty">No filters applied · ${state.memories.length} ${state.memories.length === 1 ? "memory" : "memories"}</span>`;
+          bar.innerHTML = `<span class="filter-bar-empty">${state.memories.length} ${state.memories.length === 1 ? "record" : "records"}</span>`;
           return;
         }
         bar.innerHTML =
           `<span class="filter-bar-label">Filters</span>` +
           chips.join("") +
-          `<button type="button" class="filter-clear-all" id="clear-all-filters">Reset all</button>`;
+          `<button type="button" class="filter-clear-all" id="clear-all-filters">Reset</button>`;
       }
-
       document.getElementById("filter-bar").addEventListener("click", (e) => {
         if (e.target.closest("#clear-all-filters")) {
           state.selected.categories.clear();
@@ -1514,7 +1565,6 @@
           document.getElementById("search").value = "";
           renderAll();
           renderFacets();
-          renderActiveFilters();
           return;
         }
         const x = e.target.closest("[data-remove-facet]");
@@ -1524,34 +1574,134 @@
           );
           renderAll();
           renderFacets();
-          renderActiveFilters();
           return;
         }
         if (e.target.closest("[data-clear-search]")) {
           state.query = "";
           document.getElementById("search").value = "";
           renderAll();
-          renderActiveFilters();
         }
       });
 
       // ─────────────────────────────────────────────
-      // Card rendering
+      // Memory rows
       // ─────────────────────────────────────────────
-      const HIDE_FROM_META_GRID = new Set([
-        "source",
-        "confidence",
-      ]);
-      const META_ORDER = [
-        "durability",
-        "auto_saved",
-        "signal_count",
-        "trigger",
-        "trigger_reasons",
-        "reason",
-        "consolidated_into",
-        "session_file",
-      ];
+      function renderConfMeter(c) {
+        const pct = Math.round(c * 100);
+        const cls = pct < 60 ? "low" : "";
+        return `<span class="meter" title="confidence ${pct}%">
+          <span class="meter-track"><span class="meter-fill ${cls}" style="width:${pct}%"></span></span>
+          <span>${pct}%</span>
+        </span>`;
+      }
+
+      function renderMemoryRow(m) {
+        const isExpanded = state.expanded.has(m.id);
+        const source = sourceOf(m);
+        const sourceClass = source.replace(/\W+/g, "_");
+        const retrievals = m.retrievalCount || 0;
+        const numClass =
+          retrievals === 0 ? "num-cell zero" : retrievals >= 5 ? "num-cell hot" : "num-cell";
+
+        const main = `
+          <tr class="row${isExpanded ? " expanded" : ""}" data-id="${escapeHtml(m.id || "")}">
+            <td class="col-expand">
+              <button type="button" class="caret" data-toggle="${escapeHtml(m.id)}" aria-label="${isExpanded ? "Collapse" : "Expand"}">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>
+              </button>
+            </td>
+            <td>
+              <div class="row-text">${escapeHtml(m.text)}</div>
+            </td>
+            <td class="col-source"><span class="pill ${sourceClass}">${escapeHtml(source)}</span></td>
+            <td class="col-agent"><span class="agent-text" title="${escapeHtml(agentOf(m))}">${escapeHtml(agentOf(m))}</span></td>
+            <td class="col-num num"><span class="${numClass}">${retrievals}</span></td>
+            <td class="col-created"><span class="time-cell" title="${escapeHtml(formatAbsolute(m.createdAt))}">${formatRelative(m.createdAt)}</span></td>
+          </tr>`;
+
+        if (!isExpanded) return main;
+
+        return main + renderDetailRow(m);
+      }
+
+      function renderDetailRow(m) {
+        const meta = m.metadata || {};
+        const conf = confidenceOf(m);
+        const categories = m.categories || [];
+
+        // Build kv grid — scope, lifecycle, then metadata keys
+        const rows = [];
+        if (m.id) rows.push(["id", `<span>${escapeHtml(m.id)}</span><button type="button" class="copy-id" data-copy-id="${escapeHtml(m.id)}">copy</button>`]);
+        const userId = m.scope && m.scope.userId;
+        const sessionId = m.scope && m.scope.sessionId;
+        if (userId) rows.push(["user", escapeHtml(userId)]);
+        if (sessionId) rows.push(["session", escapeHtml(sessionId)]);
+        rows.push(["created", escapeHtml(formatAbsolute(m.createdAt))]);
+        if (m.lastRetrieved)
+          rows.push(["retrieved", escapeHtml(formatAbsolute(m.lastRetrieved))]);
+        if (conf !== null) rows.push(["confidence", renderConfMeter(conf)]);
+
+        const META_ORDER = [
+          "durability",
+          "auto_saved",
+          "signal_count",
+          "trigger",
+          "trigger_reasons",
+          "reason",
+          "consolidated_into",
+          "session_file",
+        ];
+        const seen = new Set(["source", "confidence"]);
+        META_ORDER.forEach((k) => {
+          if (k in meta && !seen.has(k)) {
+            rows.push([k, escapeHtml(formatMetaValue(k, meta[k]))]);
+            seen.add(k);
+          }
+        });
+        Object.keys(meta).forEach((k) => {
+          if (seen.has(k)) return;
+          rows.push([k, escapeHtml(formatMetaValue(k, meta[k]))]);
+        });
+
+        const grid = rows
+          .map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${v}</dd>`)
+          .join("");
+
+        const tags = categories.length
+          ? categories
+              .map(
+                (c) =>
+                  `<button type="button" class="cat-tag" data-add-cat="${escapeHtml(c)}">${escapeHtml(c)}</button>`,
+              )
+              .join("")
+          : `<span style="color:var(--text-muted);font-size:11.5px">No categories</span>`;
+
+        const json = Object.keys(meta).length
+          ? `<div>
+              <div class="detail-section-title">Raw metadata</div>
+              <pre class="json-block">${escapeHtml(JSON.stringify(meta, null, 2))}</pre>
+            </div>`
+          : "";
+
+        return `
+          <tr class="row-detail">
+            <td colspan="6">
+              <div class="detail">
+                <div>
+                  <div class="detail-section-title">Content</div>
+                  <div class="detail-text">${escapeHtml(m.text)}</div>
+                  <div class="detail-section-title">Categories</div>
+                  <div class="detail-categories">${tags}</div>
+                  ${json}
+                </div>
+                <div class="detail-side">
+                  <div class="detail-section-title">Properties</div>
+                  <dl class="kv-grid">${grid}</dl>
+                </div>
+              </div>
+            </td>
+          </tr>`;
+      }
 
       function formatMetaValue(key, value) {
         if (value === null || value === undefined) return "—";
@@ -1563,193 +1713,33 @@
         return String(value);
       }
 
-      function renderConfidence(c) {
-        if (c === null) return "";
-        const pct = Math.round(c * 100);
-        const cls = pct >= 85 ? "high" : pct >= 60 ? "" : "low";
-        return `<span class="confidence-bar" data-tip title="Confidence ${pct}%">
-          <span class="confidence-track"><span class="confidence-fill ${cls}" style="width:${pct}%"></span></span>
-          <span>${pct}%</span>
-        </span>`;
-      }
-
-      function renderMemoryCard(m) {
-        const isExpanded = state.expanded.has(m.id);
-        const clampClass = isExpanded ? "" : " clamped";
-
-        const source = sourceOf(m);
-        const sourceClass = source.replace(/\W+/g, "_");
-        const conf = confidenceOf(m);
-        const retrievals = m.retrievalCount || 0;
-        const hotClass = retrievals >= 5 ? " hot" : "";
-
-        const agent = agentOf(m);
-
-        const tags = (m.categories || [])
-          .map(
-            (c) =>
-              `<button type="button" class="tag" data-add-cat="${escapeHtml(c)}">${escapeHtml(c)}</button>`,
-          )
-          .join("");
-
-        const meta = m.metadata || {};
-        const hasMeta = Object.keys(meta).length > 0;
-        // Show toggle if metadata exists OR text is potentially long.
-        // We refine this post-render by measuring actual overflow.
-        const potentiallyLong = (m.text || "").length > 200;
-        const showToggle = hasMeta || potentiallyLong;
-
-        const detailHtml =
-          isExpanded && hasMeta ? renderMetaDetail(m, meta) : "";
-
-        const lastRetrievedLabel = m.lastRetrieved
-          ? "Last retrieved " + formatRelative(m.lastRetrieved)
-          : retrievals
-            ? "Retrieved before tracking"
-            : "Never retrieved";
-
-        const toggleBtn = showToggle
-          ? `<button type="button" class="link-btn primary${isExpanded ? " open" : ""}" data-toggle="${escapeHtml(m.id)}">
-              <svg class="chev" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-              ${isExpanded ? "Collapse" : "Expand"}
-            </button>`
-          : "";
-
-        return `
-          <article class="card${isExpanded ? " expanded" : ""}" data-id="${escapeHtml(m.id || "")}">
-            <div class="card-meta-row">
-              <span class="agent-badge">${escapeHtml(agent)}</span>
-              <span class="source-chip ${sourceClass}">${escapeHtml(source)}</span>
-              ${conf !== null ? renderConfidence(conf) : ""}
-              <span class="meta-dot"></span>
-              <span class="card-time" title="${escapeHtml(formatAbsolute(m.createdAt))}">${formatRelative(m.createdAt)}</span>
-              <span class="meta-dot"></span>
-              <span class="retrieval-pill${hotClass}" title="${escapeHtml(lastRetrievedLabel)}">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"/></svg>
-                ${retrievals} ${retrievals === 1 ? "retrieval" : "retrievals"}
-              </span>
-            </div>
-
-            <div class="card-text${clampClass}">${escapeHtml(m.text)}</div>
-
-            <div class="card-footer">
-              <div class="category-row">${tags || '<span style="color:var(--text-muted);font-size:12px">Uncategorized</span>'}</div>
-              <div class="card-actions">
-                ${toggleBtn}
-                ${m.id ? `<button type="button" class="link-btn" data-copy-id="${escapeHtml(m.id)}" title="Copy ID">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                  ID
-                </button>` : ""}
-              </div>
-            </div>
-
-            ${detailHtml}
-          </article>`;
-      }
-
-      // After render, remove the Expand button on any card where the
-      // text isn't actually overflowing AND there's no metadata to show.
-      // -webkit-line-clamp is line-based, so a short text on a wide screen
-      // can fit fully without overflow even when its character count is high.
-      function refineExpandButtons() {
-        const cards = document.querySelectorAll("#memories .card");
-        cards.forEach((card) => {
-          const id = card.getAttribute("data-id");
-          if (!id) return;
-          const memory = state.memories.find((m) => m.id === id);
-          const hasMeta =
-            memory && Object.keys(memory.metadata || {}).length > 0;
-          if (hasMeta) return;
-          if (state.expanded.has(id)) return;
-          const text = card.querySelector(".card-text.clamped");
-          if (!text) return;
-          const overflowing = text.scrollHeight > text.clientHeight + 1;
-          if (!overflowing) {
-            const btn = card.querySelector("[data-toggle]");
-            if (btn) btn.remove();
-          }
-        });
-      }
-
-      function renderMetaDetail(m, meta) {
-        const rows = [];
-        const seen = new Set();
-
-        const userId = m.scope && m.scope.userId;
-        const sessionId = m.scope && m.scope.sessionId;
-        if (m.id) rows.push(["id", m.id]);
-        if (userId) rows.push(["user", userId]);
-        if (sessionId) rows.push(["session", sessionId]);
-        rows.push(["created", formatAbsolute(m.createdAt)]);
-        if (m.lastRetrieved)
-          rows.push(["last retrieved", formatAbsolute(m.lastRetrieved)]);
-
-        META_ORDER.forEach((k) => {
-          if (k in meta && !HIDE_FROM_META_GRID.has(k)) {
-            rows.push([k, formatMetaValue(k, meta[k])]);
-            seen.add(k);
-          }
-        });
-        Object.keys(meta).forEach((k) => {
-          if (seen.has(k) || HIDE_FROM_META_GRID.has(k)) return;
-          if (META_ORDER.includes(k)) return;
-          rows.push([k, formatMetaValue(k, meta[k])]);
-        });
-
-        const grid = rows
-          .map(
-            ([k, v]) =>
-              `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`,
-          )
-          .join("");
-
-        const json =
-          Object.keys(meta).length > 0
-            ? `<div>
-                <div class="meta-section-title" style="margin-bottom:6px">Raw metadata</div>
-                <pre class="meta-json">${escapeHtml(JSON.stringify(meta, null, 2))}</pre>
-              </div>`
-            : "";
-
-        return `<div class="meta-detail">
-          <dl class="meta-grid">${grid}</dl>
-          ${json}
-        </div>`;
-      }
-
       // ─────────────────────────────────────────────
-      // Main render
+      // Render
       // ─────────────────────────────────────────────
       function renderAll() {
-        if (state.activeView === "entities") {
-          renderEntities();
-        } else {
-          renderMemories();
-        }
+        if (state.activeView === "entities") renderEntities();
+        else renderMemories();
         renderActiveFilters();
       }
-
       function renderMemories() {
         const filtered = sortMemories(applyFilters(state.memories));
         const total = state.memories.length;
         const label = document.getElementById("result-label");
-
-        if (filtered.length === total) {
+        if (filtered.length === total)
           label.textContent =
-            total === 0 ? "" : `${total} ${total === 1 ? "memory" : "memories"}`;
-        } else {
-          label.textContent = `${filtered.length} of ${total}`;
-        }
+            total === 0
+              ? ""
+              : `${total} ${total === 1 ? "record" : "records"}`;
+        else label.textContent = `${filtered.length} / ${total}`;
 
         const host = document.getElementById("memories");
         if (!filtered.length) {
           host.innerHTML = total
-            ? `<div class="empty-state"><strong>No matches</strong>Try adjusting your filters or search.</div>`
-            : `<div class="empty-state"><strong>No memories yet</strong>Capture a conversation or add one via the CLI to see it here.</div>`;
+            ? `<tr><td colspan="6"><div class="empty"><strong>No matches</strong>Adjust filters or search to find memories.</div></td></tr>`
+            : `<tr><td colspan="6"><div class="empty"><strong>No memories yet</strong>Capture a conversation or add one via the CLI.</div></td></tr>`;
           return;
         }
-        host.innerHTML = filtered.map(renderMemoryCard).join("");
-        requestAnimationFrame(refineExpandButtons);
+        host.innerHTML = filtered.map(renderMemoryRow).join("");
       }
 
       function computeEntities() {
@@ -1773,26 +1763,25 @@
         });
         return Array.from(map.values()).sort((a, b) => b.count - a.count);
       }
-
       function renderEntities() {
         const entities = computeEntities();
         document.getElementById("result-label").textContent =
-          entities.length + " " + (entities.length === 1 ? "entity" : "entities");
-
+          entities.length +
+          " " +
+          (entities.length === 1 ? "entity" : "entities");
         const host = document.getElementById("entities");
         if (!entities.length) {
-          host.innerHTML = `<tr><td colspan="5"><div class="empty-state" style="border:none;padding:32px">No entities yet.</div></td></tr>`;
+          host.innerHTML = `<tr><td colspan="5"><div class="empty"><strong>No entities</strong>Capture some memories to populate scopes.</div></td></tr>`;
           return;
         }
         host.innerHTML = entities
           .map(
-            (e) => `
-            <tr>
-              <td><span class="agent-badge">${escapeHtml(e.agent)}</span></td>
-              <td class="scope-mono">${e.user ? escapeHtml(e.user) : '<span style="color:var(--text-muted)">—</span>'}</td>
-              <td class="scope-mono">${e.session ? escapeHtml(e.session) : '<span style="color:var(--text-muted)">—</span>'}</td>
-              <td class="num">${e.count}</td>
-              <td class="num">${e.retrievals}</td>
+            (e) => `<tr class="row">
+              <td><span class="agent-text">${escapeHtml(e.agent)}</span></td>
+              <td><span class="agent-text">${e.user ? escapeHtml(e.user) : '<span style="color:var(--text-muted)">—</span>'}</span></td>
+              <td><span class="agent-text">${e.session ? escapeHtml(e.session) : '<span style="color:var(--text-muted)">—</span>'}</span></td>
+              <td class="col-num num"><span class="num-cell">${e.count}</span></td>
+              <td class="col-num num"><span class="num-cell">${e.retrievals}</span></td>
             </tr>`,
           )
           .join("");
@@ -1819,9 +1808,10 @@
           view === "entities" ? "Entities" : "Memories";
         renderAll();
       }
-
       document.querySelectorAll(".nav-item[data-view]").forEach((el) => {
-        el.addEventListener("click", () => setView(el.getAttribute("data-view")));
+        el.addEventListener("click", () =>
+          setView(el.getAttribute("data-view")),
+        );
       });
 
       // ─────────────────────────────────────────────
@@ -1836,8 +1826,6 @@
         state.sort = e.target.value;
         renderAll();
       });
-
-      // Keyboard: "/" focuses search
       document.addEventListener("keydown", (e) => {
         if (
           e.key === "/" &&
@@ -1848,21 +1836,30 @@
           searchInput.focus();
           searchInput.select();
         }
-        if (e.key === "Escape" && document.activeElement === searchInput) {
+        if (e.key === "Escape" && document.activeElement === searchInput)
           searchInput.blur();
-        }
       });
 
       // ─────────────────────────────────────────────
-      // Card interactions (event delegation)
+      // Row interactions
       // ─────────────────────────────────────────────
+      function toggleExpanded(id) {
+        if (!id) return;
+        if (state.expanded.has(id)) state.expanded.delete(id);
+        else state.expanded.add(id);
+        renderMemories();
+      }
+
       document.getElementById("memories").addEventListener("click", (e) => {
         const toggle = e.target.closest("[data-toggle]");
         if (toggle) {
-          const id = toggle.getAttribute("data-toggle");
-          if (state.expanded.has(id)) state.expanded.delete(id);
-          else state.expanded.add(id);
-          renderMemories();
+          toggleExpanded(toggle.getAttribute("data-toggle"));
+          return;
+        }
+        // Click anywhere on the row (not on inner buttons) to expand
+        const row = e.target.closest("tr.row");
+        if (row && !e.target.closest("button, a, .cat-tag, .copy-id")) {
+          toggleExpanded(row.getAttribute("data-id"));
           return;
         }
         const cat = e.target.closest("[data-add-cat]");
@@ -1876,10 +1873,9 @@
         if (copy) {
           const id = copy.getAttribute("data-copy-id");
           navigator.clipboard?.writeText(id);
-          const orig = copy.innerHTML;
-          copy.innerHTML =
-            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Copied';
-          setTimeout(() => (copy.innerHTML = orig), 1200);
+          const orig = copy.textContent;
+          copy.textContent = "copied";
+          setTimeout(() => (copy.textContent = orig), 1000);
         }
       });
 
