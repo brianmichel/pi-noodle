@@ -11,13 +11,14 @@ Long-term memory for Pi, powered by a local [libSQL](https://turso.tech/libsql) 
 pi install pi-noodle
 
 # In Pi, configure interactively
-/noodle setup
+/noodle settings
 ```
 
-The setup wizard walks you through:
+The setup screen shows the full config on one page:
 1. Database mode — local file or Turso Cloud
 2. Embedding provider — OpenAI, LM Studio, Ollama, or custom
-3. Required fields are validated (no empty API keys or malformed URLs)
+3. Relevant fields update in place as you switch modes/providers
+4. Required fields are validated before save
 
 Settings are saved to `~/.pi/noodle/config.json` — memories travel with you across all projects.
 
@@ -25,7 +26,8 @@ Settings are saved to `~/.pi/noodle/config.json` — memories travel with you ac
 
 ```
 /noodle           Show current config (paths, endpoint, masked API key)
-/noodle setup     Interactive configuration wizard with validation
+/noodle settings  Interactive single-screen configuration editor with validation
+/noodle setup     Alias for /noodle settings
 /noodle init      Create a default config file for manual editing
 /noodle web       Start the Memory Explorer (auto-stops when all tabs close)
 /noodle web stop  Stop the explorer immediately
@@ -127,10 +129,11 @@ Vector similarity via `vector_distance_cos()` in libSQL, ranked by cosine distan
 ```
 src/
 ├── config.ts              # Config resolution (~/.pi/noodle/config.json + env vars)
+├── config-screen.ts       # Flat single-screen config editor for /noodle settings
 ├── constants.ts           # DEFAULT_AGENT_ID
 ├── types.ts               # NoodleConfig, JsonObject, NotificationTarget, etc.
 ├── utils.ts               # maskSecret, describeError, formatJson, extractTextContent
-├── commands.ts            # /noodle command + interactive setup wizard
+├── commands.ts            # /noodle command + interactive setup entrypoint
 ├── extension.ts           # Pi extension lifecycle hooks
 ├── tools.ts               # memory_add / search / list / get / update / delete
 ├── session.ts             # Session message collection

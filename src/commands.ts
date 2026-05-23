@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import { resolveConfig, resolveConfigPath, writeConfig } from "./config.ts";
+import { runConfigScreen } from "./config-screen.ts";
 import { EXTRACTOR_DEFAULT_MODEL, memoryService } from "./memory/runtime.ts";
 import { maskSecret } from "./utils.ts";
 import {
@@ -36,6 +37,14 @@ type CtxUi = {
   input: (p: string, d?: string) => Promise<string | undefined>;
   confirm: (t: string, m: string) => Promise<boolean>;
   notify: (m: string, l: "info" | "error") => void;
+  custom?: <T>(
+    factory: (
+      tui: unknown,
+      theme: unknown,
+      keybindings: unknown,
+      done: (result: T) => void,
+    ) => unknown,
+  ) => Promise<T>;
 };
 
 // ---------------------------------------------------------------------------
@@ -45,11 +54,11 @@ type CtxUi = {
 export function registerCommands(pi: ExtensionAPI): void {
   pi.registerCommand("noodle", {
     description:
-      "Noodle memory config — /noodle | /noodle setup | /noodle init | /noodle review | /noodle web [dev] [port] | /noodle web stop",
+      "Noodle memory — status, settings, review, and web explorer",
     handler: async (args, ctx) => {
       const sub = args.trim();
 
-      if (sub === "setup") {
+      if (sub === "settings" || sub === "setup") {
         await runSetup(ctx.ui as unknown as CtxUi);
         return;
       }
@@ -63,7 +72,7 @@ export function registerCommands(pi: ExtensionAPI): void {
         const path = resolveConfigPath();
         writeConfig({});
         ctx.ui.notify(
-          `Created config at ${path}. Run /noodle setup to configure.`,
+          `Created config at ${path}. Run /noodle settings to configure.`,
           "info",
         );
         return;
@@ -112,6 +121,7 @@ export function registerCommands(pi: ExtensionAPI): void {
       // Default: show status
       const config = resolveConfig();
       ctx.ui.notify("─── Noodle Memory ───", "info");
+      ctx.ui.notify("Commands: /noodle settings | /noodle review | /noodle web", "info");
       ctx.ui.notify(`Config: ${resolveConfigPath()}`, "info");
       ctx.ui.notify(
         `Database: ${config.db.mode}  ${showDbTarget(config)}`,
@@ -134,7 +144,7 @@ export function registerCommands(pi: ExtensionAPI): void {
           "info",
         );
       } else {
-        ctx.ui.notify("Extractor: disabled  (run /noodle setup to enable)", "info");
+        ctx.ui.notify("Extractor: disabled  (run /noodle settings to enable)", "info");
       }
     },
   });
@@ -148,7 +158,19 @@ async function runSetup(ui: CtxUi): Promise<void> {
   try {
     ui.notify(`Config will be saved to: ${resolveConfigPath()}`, "info");
 
-    // 1. Database mode
+    const current = resolveConfig();
+    const screenResult = await runConfigScreen(ui, current);
+    if (screenResult) {
+      if (screenResult.cancelled) {
+        ui.notify("Setup cancelled.", "info");
+        return;
+      }
+      writeConfig(screenResult.partial);
+      ui.notify("Config saved. /reload to apply.", "info");
+      return;
+    }
+
+    // Fallback for environments without custom UI support
     const dbChoice = await ui.select("Database mode", DB_MODE_OPTIONS);
     const dbMode: "local" | "cloud" = dbChoice?.startsWith("Cloud")
       ? "cloud"
@@ -157,16 +179,11 @@ async function runSetup(ui: CtxUi): Promise<void> {
     const dbConfig =
       dbMode === "cloud" ? await collectCloudDb(ui) : await collectLocalDb(ui);
 
-    // 2. Embedding provider
     const pChoice = await ui.select("Embedding provider", PROVIDER_OPTIONS);
     const provider = parseProvider(pChoice ?? "");
-
     const embedConfig = await collectEmbedding(ui, provider);
-
-    // 3. LLM extractor (optional)
     const extractorConfig = await collectExtractor(ui);
 
-    // 4. Confirm
     const summaryLines = [
       `Database: ${dbMode}  ${dbConfig.summary}`,
       `Embedding: ${provider}  ${embedConfig.summary}`,
