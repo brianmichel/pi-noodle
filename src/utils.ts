@@ -1,28 +1,10 @@
-export function maskSecret(value?: string): string {
-  if (!value) return "(unset)";
+export function maskSecret(value: string): string {
   if (value.length <= 8) return "*".repeat(value.length);
   return `${value.slice(0, 4)}…${value.slice(-4)}`;
 }
 
-export function normalizeBaseUrl(baseUrl: string): string {
-  return baseUrl.trim().replace(/\/+$/, "");
-}
-
-export function normalizeOptionalString(value?: string): string | undefined {
-  const trimmed = value?.trim();
-  return trimmed || undefined;
-}
-
 export function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-export function safeJsonParse(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text;
-  }
 }
 
 export function formatJson(value: unknown): string {

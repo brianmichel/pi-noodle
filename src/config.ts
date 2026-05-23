@@ -1,132 +1,98 @@
-import { execFile } from "node:child_process";
-import { promises as fs } from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { promisify } from "node:util";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import type { NoodleConfig, NoodleConfigPartial } from "./types.ts";
 
-import { CONFIG_DIR_SEGMENTS, CONFIG_ENV_VAR } from "./constants.ts";
-import type { Mem0Config } from "./types.ts";
-import { normalizeBaseUrl, normalizeOptionalString } from "./utils.ts";
+// ---------------------------------------------------------------------------
+// Paths — user-level, not project-level (memories travel with the user)
+// ---------------------------------------------------------------------------
 
-const execFileAsync = promisify(execFile);
-
-let resolvedSystemUserIdPromise: Promise<string | undefined> | undefined;
+const NOODLE_DIR = join(homedir(), ".pi", "noodle");
 
 export function resolveConfigPath(): string {
-  const explicitPath = normalizeOptionalString(process.env[CONFIG_ENV_VAR]);
-  if (explicitPath) {
-    return path.resolve(explicitPath);
-  }
-
-  if (process.platform === "darwin") {
-    return path.join(
-      os.homedir(),
-      "Library",
-      "Application Support",
-      ...CONFIG_DIR_SEGMENTS,
-      "config.json",
-    );
-  }
-
-  if (process.platform === "win32") {
-    const appData = normalizeOptionalString(process.env.APPDATA);
-    const baseDir = appData || path.join(os.homedir(), "AppData", "Roaming");
-    return path.join(baseDir, ...CONFIG_DIR_SEGMENTS, "config.json");
-  }
-
-  const xdgConfigHome = normalizeOptionalString(process.env.XDG_CONFIG_HOME);
-  return path.join(
-    xdgConfigHome || path.join(os.homedir(), ".config"),
-    ...CONFIG_DIR_SEGMENTS,
-    "config.json",
-  );
+  return process.env["NOODLE_CONFIG_PATH"] ?? join(NOODLE_DIR, "config.json");
 }
 
-export async function resolveSystemUserId(): Promise<string | undefined> {
-  if (!resolvedSystemUserIdPromise) {
-    resolvedSystemUserIdPromise = (async () => {
-      try {
-        const userInfoName = normalizeOptionalString(os.userInfo().username);
-        if (userInfoName) return userInfoName;
-      } catch {
-        // ignore
-      }
+// ---------------------------------------------------------------------------
+// Defaults
+// ---------------------------------------------------------------------------
 
-      const envUser = normalizeOptionalString(
-        process.env.LOGNAME || process.env.USER || process.env.LNAME || process.env.USERNAME,
-      );
-      if (envUser) return envUser;
+const DEFAULTS: NoodleConfig = {
+  db: {
+    mode: "local",
+    path: join(NOODLE_DIR, "memories.db"),
+  },
+  embedding: {
+    provider: "openai",
+    apiKey: "",
+    baseUrl: "https://api.openai.com/v1",
+    model: "text-embedding-3-small",
+  },
+};
 
-      try {
-        const { stdout } = await execFileAsync("whoami");
-        return normalizeOptionalString(stdout);
-      } catch {
-        return undefined;
-      }
-    })();
+// ---------------------------------------------------------------------------
+// Read
+// ---------------------------------------------------------------------------
+
+export function resolveConfig(): NoodleConfig {
+  const config = structuredClone(DEFAULTS);
+
+  // File overlays defaults
+  const filePath = resolveConfigPath();
+  if (existsSync(filePath)) {
+    try {
+      mergeInto(config, JSON.parse(readFileSync(filePath, "utf-8")));
+    } catch {
+      // corrupt file — skip to env
+    }
   }
 
-  return resolvedSystemUserIdPromise;
-}
-
-export async function readStoredConfig(): Promise<Partial<Mem0Config>> {
-  try {
-    const raw = await fs.readFile(resolveConfigPath(), "utf8");
-    const parsed = JSON.parse(raw) as Partial<Mem0Config>;
-    return parsed ?? {};
-  } catch {
-    return {};
+  // Environment variables take highest priority
+  const env = process.env;
+  if (env["NOODLE_DB_PATH"]) config.db.path = env["NOODLE_DB_PATH"];
+  if (env["NOODLE_DB_URL"]) {
+    config.db.url = env["NOODLE_DB_URL"];
+    config.db.mode = "cloud";
   }
+  if (env["NOODLE_DB_TOKEN"]) config.db.authToken = env["NOODLE_DB_TOKEN"];
+  if (env["OPENAI_API_KEY"]) config.embedding.apiKey = env["OPENAI_API_KEY"];
+  if (env["EMBEDDING_BASE_URL"]) config.embedding.baseUrl = env["EMBEDDING_BASE_URL"];
+  if (env["EMBEDDING_MODEL"]) config.embedding.model = env["EMBEDDING_MODEL"];
+
+  return config;
 }
 
-export async function resolveConfig(): Promise<Mem0Config> {
-  const stored = await readStoredConfig();
-  const baseUrl = normalizeBaseUrl(stored.baseUrl || process.env.MEM0_BASE_URL || "");
-  const apiKey = (stored.apiKey || process.env.MEM0_API_KEY || "").trim();
-  const userId = normalizeOptionalString(stored.userId || process.env.MEM0_USER_ID)
-    || await resolveSystemUserId();
+// ---------------------------------------------------------------------------
+// Write
+// ---------------------------------------------------------------------------
 
-  if (!baseUrl) {
-    throw new Error(
-      "Mem0 base URL is not configured. Run /mem0-config set <baseUrl> <apiKey> or set MEM0_BASE_URL.",
-    );
-  }
+export function writeConfig(partial: NoodleConfigPartial): void {
+  const config = resolveConfig();
+  mergeInto(config, partial);
 
-  if (!apiKey) {
-    throw new Error(
-      "Mem0 API key is not configured. Run /mem0-config set <baseUrl> <apiKey> or set MEM0_API_KEY.",
-    );
-  }
-
-  return {
-    baseUrl,
-    apiKey,
-    ...(userId ? { userId } : {}),
-  };
+  const filePath = resolveConfigPath();
+  mkdirSync(NOODLE_DIR, { recursive: true });
+  writeFileSync(filePath, JSON.stringify(config, null, 2) + "\n", "utf-8");
 }
 
-export async function writeConfig(config: Mem0Config): Promise<void> {
-  const configPath = resolveConfigPath();
-  await fs.mkdir(path.dirname(configPath), { recursive: true });
-  await fs.writeFile(
-    configPath,
-    `${JSON.stringify(
-      {
-        baseUrl: normalizeBaseUrl(config.baseUrl),
-        apiKey: config.apiKey.trim(),
-        userId: normalizeOptionalString(config.userId),
-      },
-      null,
-      2,
-    )}\n`,
-    "utf8",
-  );
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+type PlainObject = Record<string, unknown>;
+
+function isPlainObject(value: unknown): value is PlainObject {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-export async function clearConfig(): Promise<void> {
-  try {
-    await fs.unlink(resolveConfigPath());
-  } catch {
-    // ignore
+function mergeInto(target: PlainObject, source: PlainObject): void {
+  for (const key of Object.keys(source)) {
+    const src = source[key];
+    const dst = target[key];
+    if (isPlainObject(src) && isPlainObject(dst)) {
+      mergeInto(dst, src);
+    } else {
+      target[key] = src;
+    }
   }
 }

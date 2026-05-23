@@ -1,122 +1,129 @@
-# mem0-client pi extension
+# pi-noodle
 
-Source-based, publish-ready Pi memory extension with a **generic memory interface** backed by a self-hosted **Mem0** backend by default.
+Long-term memory for Pi, powered by a local [libSQL](https://turso.tech/libsql) database with vector similarity search.
 
-This repo uses a regular `package.json` with a `pi` manifest, a refactored `src/` layout, and a root `index.ts` shim so it works both as a normal Pi package and as a checked-out local extension.
-
-The public interface is intentionally provider-agnostic:
-- generic `memory_*` tools
-- provider-agnostic memory records, search inputs, and scopes
-- automatic memory capture + retrieval policy in a service layer
-- Mem0-specific request paths and payload mapping hidden behind the default backend adapter
-
-## Tools
-
-- `memory_add`
-- `memory_search`
-- `memory_list`
-- `memory_get`
-- `memory_update`
-- `memory_delete`
-
-## Commands
-
-- `/memory-config show`
-- `/memory-config set <baseUrl> <apiKey> [userId]`
-- `/memory-config clear`
-- `/memory-test`
-
-## Backend
-
-The default backend implementation is Mem0.
-
-That means this extension currently stores its backend config using Mem0 environment names and connection details, but the extension logic itself now talks to a generic memory service rather than directly to Mem0 request paths.
-
-## Config
-
-The config command stores backend config in a normal user config location instead of inside the extension directory:
-
-- macOS: `~/Library/Application Support/pi/extensions/mem0-client/config.json`
-- Linux: `${XDG_CONFIG_HOME:-~/.config}/pi/extensions/mem0-client/config.json`
-- Windows: `%APPDATA%/pi/extensions/mem0-client/config.json`
-
-You can override that path with:
-
-- `MEM0_CONFIG_PATH`
-
-You can also use env vars instead:
-
-- `MEM0_BASE_URL`
-- `MEM0_API_KEY`
-- `MEM0_USER_ID` (optional)
-
-## Development
-
-This repo uses [mise](https://mise.jdx.dev/) to pin local tooling.
+## Quick start
 
 ```bash
-mise install
-npm install
-npm run check
-npm test
+# Install as a Pi extension
+pi install pi-noodle
+
+# In Pi, configure interactively
+/noodle setup
 ```
 
-The repository includes:
+The setup wizard walks you through:
+1. Database mode — local file or Turso Cloud
+2. Embedding provider — OpenAI, LM Studio, Ollama, or custom
+3. Required fields are validated (no empty API keys or malformed URLs)
 
-- `.mise.toml` — pins Node.js for local development
-- `tsconfig.json` — strict typechecking
-- `package.json` `check` script — runs `tsc --noEmit`
-- `package.json` `test` script — runs the Node test suite
+Settings are saved to `~/.pi/noodle/config.json` — memories travel with you across all projects.
 
-## Install
+## `/noodle` command
 
-### As a Pi package
-
-Install from git or npm with Pi's package support, for example:
-
-```bash
-pi install git:<your-repo-url>
+```
+/noodle           Show current config (paths, endpoint, masked API key)
+/noodle setup     Interactive configuration wizard with validation
+/noodle init      Create a default config file for manual editing
 ```
 
-Pi discovers the extension via `package.json`:
+## Config file
+
+`~/.pi/noodle/config.json`:
 
 ```json
 {
-  "pi": {
-    "extensions": ["./src/index.ts"]
+  "db": {
+    "mode": "local",
+    "path": "/Users/you/.pi/noodle/memories.db"
+  },
+  "embedding": {
+    "provider": "openai",
+    "apiKey": "sk-...",
+    "baseUrl": "https://api.openai.com/v1",
+    "model": "text-embedding-3-small"
   }
 }
 ```
 
-### As a checked-out local extension
+### Cloud mode (Turso)
 
-Pi also auto-discovers project-local extensions from `.pi/extensions/*/index.ts`, so you can place this repo at:
+```json
+{
+  "db": {
+    "mode": "cloud",
+    "url": "libsql://my-db-org.turso.io",
+    "authToken": "eyJ..."
+  },
+  "embedding": {
+    "provider": "openai",
+    "apiKey": "sk-...",
+    "baseUrl": "https://api.openai.com/v1",
+    "model": "text-embedding-3-small"
+  }
+}
+```
 
-- `.pi/extensions/mem0-client/`
+## Environment variable overrides
 
-## Reload
+Env vars take priority over the config file:
 
-Run `/reload` in Pi after adding or changing the extension.
+| Variable | Overrides |
+|---|---|
+| `NOODLE_CONFIG_PATH` | Config file location |
+| `NOODLE_DB_PATH` | Local DB path |
+| `NOODLE_DB_URL` | Cloud DB URL |
+| `NOODLE_DB_TOKEN` | Cloud DB auth token |
+| `OPENAI_API_KEY` | Embedding API key |
+| `EMBEDDING_BASE_URL` | Embedding endpoint URL |
+| `EMBEDDING_MODEL` | Embedding model name |
 
-## Structure
+## Architecture
 
-- `src/index.ts` — src entrypoint
-- `src/extension.ts` — extension wiring and event registration
-- `src/tools.ts` — generic memory tool definitions
-- `src/commands.ts` — backend configuration and diagnostics commands
-- `src/api.ts` — HTTP request helpers with base URL fallback
-- `src/config.ts` — backend config path and loading logic
-- `src/session.ts` — session message extraction helpers
-- `src/memory/backend.ts` — provider-agnostic backend interface
-- `src/memory/mem0-backend.ts` — Mem0 adapter implementation
-- `src/memory/runtime.ts` — default backend wiring
-- `src/memory/service.ts` — provider-agnostic memory service and auto-capture flow
-- `src/memory/policy.ts` — heuristics, retrieval gating, and scoring policy
-- `src/memory/types.ts` — provider-agnostic memory domain types
-- `src/types.ts` — shared non-memory types
-- `src/utils.ts` — string/JSON helpers
-- `src/queue.ts` — async work queue
-- `index.ts` — root shim for Pi auto-discovery in `.pi/extensions/*/index.ts`
-- `package.json` — Pi package manifest for npm/git installs
-- `tsconfig.json` — strict typechecking support
-- `.mise.toml` — local toolchain pinning
+```
+MemoryService (dedupe, heuristics, auto-capture)
+       │
+  MemoryBackend (interface)
+       │
+  TursoBackend
+       │
+  ├── libSQL (local file or Turso Cloud)
+  └── Embedder (OpenAI / LM Studio / Ollama / any /v1/embeddings)
+```
+
+### What gets stored
+
+Every memory is a row in SQLite with `text`, `embedding` (F32_BLOB), `category`, `categories`, `scope` (userId/assistantId/sessionId), and arbitrary `metadata`.
+
+### Search
+
+Vector similarity via `vector_distance_cos()` in libSQL, ranked by cosine distance, post-filtered by category and threshold.
+
+### Heuristics
+
+`MemoryService.policy.ts` classifies messages, tracks repetition (3× threshold), and auto-saves durable memories without explicit user commands.
+
+## File layout
+
+```
+src/
+├── config.ts              # Config resolution (~/.pi/noodle/config.json + env vars)
+├── constants.ts           # DEFAULT_AGENT_ID
+├── types.ts               # NoodleConfig, JsonObject, NotificationTarget, etc.
+├── utils.ts               # maskSecret, describeError, formatJson, extractTextContent
+├── commands.ts            # /noodle command + interactive setup wizard
+├── extension.ts           # Pi extension lifecycle hooks
+├── tools.ts               # memory_add / search / list / get / update / delete
+├── session.ts             # Session message collection
+├── queue.ts               # Sequential async write queue
+├── notifications.ts       # UI notification helpers
+└── memory/
+    ├── backend.ts         # MemoryBackend interface
+    ├── types.ts           # MemoryRecord, MemoryScope, etc.
+    ├── turso-backend.ts   # TursoBackend (libSQL + vector search)
+    ├── embedder.ts        # Embedder type
+    ├── embedders/         # openai.ts, lm-studio.ts
+    ├── service.ts         # MemoryService (dedupe, scoring, auto-capture)
+    ├── policy.ts          # Heuristics (classification, repetition, retrieval)
+    └── runtime.ts         # Wiring (config + TursoBackend + MemoryService)
+```

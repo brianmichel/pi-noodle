@@ -1,12 +1,15 @@
 {
-  "name": "pi-extension-mem0-client",
+  "name": "pi-noodle",
   "version": "0.1.0",
-  "description": "Pi extension for talking to a self-hosted Mem0 REST API.",
+  "description": "Long-term memory for Pi — local libSQL database with vector search.",
   "type": "module",
   "keywords": [
     "pi-package",
     "pi-extension",
-    "mem0"
+    "memory",
+    "libsql",
+    "turso",
+    "vector-search"
   ],
   "engines": {
     "node": ">=22"
@@ -30,6 +33,9 @@
     "extensions": [
       "./src/index.ts"
     ]
+  },
+  "dependencies": {
+    "@libsql/client": "^0.15.0"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
