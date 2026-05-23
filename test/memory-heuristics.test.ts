@@ -54,3 +54,43 @@ test("retrieval classifier skips casual chatter and matches work prompts", () =>
   assert.equal(shouldRetrieveMemories("hey there"), false);
   assert.equal(shouldRetrieveMemories("Can you refactor this backend function?"), true);
 });
+
+test("captures role identity", () => {
+  const result = prefilterUserMessage("I'm a senior engineer at Acme.");
+  assert.equal(result.hasCandidate, true);
+  assert.equal(result.candidates[0]?.category, "identity");
+  assert.equal(result.candidates[0]?.durability, "durable");
+  assert.equal(result.candidates[0]?.text, "User is a senior engineer");
+});
+
+test("captures expertise background", () => {
+  const result = prefilterUserMessage("I've been doing distributed systems for 8 years.");
+  assert.equal(result.hasCandidate, true);
+  assert.equal(result.candidates[0]?.category, "identity");
+  assert.equal(result.candidates[0]?.durability, "durable");
+  assert.match(result.candidates[0]?.text ?? "", /experience with distributed systems/i);
+});
+
+test("captures tech stack decisions", () => {
+  const result = prefilterUserMessage("We're using Postgres for our database.");
+  assert.equal(result.hasCandidate, true);
+  assert.equal(result.candidates[0]?.category, "project");
+  assert.equal(result.candidates[0]?.durability, "semi_durable");
+  assert.match(result.candidates[0]?.text ?? "", /Team uses Postgres/i);
+});
+
+test("captures format preferences", () => {
+  const result = prefilterUserMessage("Always give me bullet points.");
+  assert.equal(result.hasCandidate, true);
+  assert.equal(result.candidates[0]?.category, "response_style");
+  assert.match(result.candidates[0]?.text ?? "", /bullet points/i);
+});
+
+test("strong_preference extracts the full action phrase not just the keyword", () => {
+  // Using a sentence without embedded punctuation so the full phrase is captured.
+  // The category may be inferred as coding_pref when context words (use + code) are present.
+  const result = prefilterUserMessage("Never add comments to code");
+  assert.equal(result.hasCandidate, true);
+  // The captured text should be the full phrase, not just "never"
+  assert.match(result.candidates[0]?.text ?? "", /never add comments/i);
+});

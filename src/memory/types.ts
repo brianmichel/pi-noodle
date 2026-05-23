@@ -9,7 +9,7 @@ export type MemoryCategory =
 
 export type MemoryDurability = "durable" | "semi_durable" | "ephemeral";
 
-export type MemorySource = "explicit" | "heuristic" | "repetition";
+export type MemorySource = "explicit" | "heuristic" | "repetition" | "llm_extracted" | "consolidated";
 
 export type MemoryScope = {
   userId?: string;
@@ -88,4 +88,17 @@ export type LocalSignal = {
   key: string;
   count: number;
   lastSeenAt: number;
+};
+
+export type ExtractionCandidate = {
+  text: string;
+  category: MemoryCategory;
+  durability: MemoryDurability;
+  confidence: number;
+  reason: string;
+};
+
+export type ConsolidationReport = {
+  merged: number;
+  deleted: number;
 };

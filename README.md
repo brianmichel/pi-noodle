@@ -2,6 +2,8 @@
 
 Long-term memory for Pi, powered by a local [libSQL](https://turso.tech/libsql) database with vector similarity search.
 
+![](img/dashboard.jpeg)
+
 ## Quick start
 
 ```bash

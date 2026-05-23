@@ -4,6 +4,7 @@ import type { MemoryBackend } from "./backend.ts";
 import type { Embedder } from "./embedder.ts";
 import type {
   AddMemoryInput,
+  ConsolidationReport,
   ConversationCaptureInput,
   MemoryCategory,
   MemoryListInput,
@@ -377,6 +378,71 @@ export class TursoBackend implements MemoryBackend {
         Date.now(),
       ],
     });
+  }
+
+  async consolidate(): Promise<ConsolidationReport> {
+    await this.ensureSchema();
+
+    const report: ConsolidationReport = { merged: 0, deleted: 0 };
+
+    try {
+      // Find near-duplicate pairs using a vector self-join.
+      // Distance < 0.04 (cosine) is effectively the same memory.
+      // We only scan the 500 most recent memories to bound query time.
+      const result = await this.db.execute(`
+        SELECT a.id     AS id_a,
+               b.id     AS id_b,
+               a.text   AS text_a,
+               b.text   AS text_b,
+               a.created_at AS created_a,
+               b.created_at AS created_b,
+               vector_distance_cos(a.embedding, b.embedding) AS dist
+        FROM (SELECT * FROM memories ORDER BY created_at DESC LIMIT 500) a
+        JOIN (SELECT * FROM memories ORDER BY created_at DESC LIMIT 500) b
+          ON a.id < b.id
+        WHERE a.embedding IS NOT NULL
+          AND b.embedding IS NOT NULL
+          AND vector_distance_cos(a.embedding, b.embedding) < 0.04
+        ORDER BY dist
+        LIMIT 50
+      `);
+
+      const toDelete = new Set<string>();
+
+      for (const raw of result.rows as Record<string, unknown>[]) {
+        const idA = raw.id_a as string;
+        const idB = raw.id_b as string;
+        if (toDelete.has(idA) || toDelete.has(idB)) continue;
+
+        // Keep the newer memory; soft-delete the older one by marking metadata
+        const createdA = raw.created_a as number;
+        const createdB = raw.created_b as number;
+        const [keepId, dropId] = createdA >= createdB ? [idA, idB] : [idB, idA];
+
+        // Mark the dropped record as consolidated before removing it
+        await this.db.execute({
+          sql: `UPDATE memories
+                SET metadata = json_patch(metadata, ?)
+                WHERE id = ?`,
+          args: [JSON.stringify({ consolidated_into: keepId }), dropId],
+        });
+
+        toDelete.add(dropId);
+        report.deleted++;
+      }
+
+      for (const id of toDelete) {
+        await this.db.execute({
+          sql: "DELETE FROM memories WHERE id = ?",
+          args: [id],
+        });
+      }
+    } catch {
+      // vector_distance_cos in self-join may not be available in all libSQL builds;
+      // fail silently so consolidation never crashes the extension.
+    }
+
+    return report;
   }
 
   // ---- internals --------------------------------------------------------

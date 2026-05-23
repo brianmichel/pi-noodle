@@ -1,3 +1,5 @@
+import type { Api, Model } from "@earendil-works/pi-ai";
+
 import { DEFAULT_AGENT_ID } from "../constants.ts";
 import { enqueueWriteTask } from "../queue.ts";
 import {
@@ -8,14 +10,13 @@ import {
 } from "../session.ts";
 import type { JsonObject, NotificationTarget, SessionManagerLike } from "../types.ts";
 import type { MemoryBackend } from "./backend.ts";
+import { extractMemoriesFromMessages } from "./extractor.ts";
 import {
   buildSignalKey,
   categoriesForPrompt,
   prefilterUserMessage,
-  scoreMemoryText,
   shouldPromoteCandidate,
   shouldRetrieveMemories,
-  tokenizePrompt,
 } from "./policy.ts";
 import type {
   AddMemoryInput,
@@ -69,33 +70,16 @@ export class MemoryService {
     await this.backend.delete(id);
   }
 
-  buildRetrievalPlan(prompt: string): { shouldRetrieve: boolean; categories: MemoryCategory[] } {
-    return {
-      shouldRetrieve: shouldRetrieveMemories(prompt),
-      categories: categoriesForPrompt(prompt),
-    };
-  }
-
   async findRelevantMemories(prompt: string, limit = 3): Promise<MemoryRecord[]> {
-    const retrievalPlan = this.buildRetrievalPlan(prompt);
-    if (!retrievalPlan.shouldRetrieve) return [];
+    if (!shouldRetrieveMemories(prompt)) return [];
 
-    const memories = await this.list();
-    const queryTokens = tokenizePrompt(prompt);
-    return memories
-      .map((memory) => ({
-        ...memory,
-        score: scoreMemoryText(
-          memory.text,
-          queryTokens,
-          retrievalPlan.categories,
-          memory.categories,
-          memory.metadata.durability,
-        ),
-      }))
-      .filter((memory) => (memory.score ?? 0) > 0)
-      .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-      .slice(0, limit);
+    return this.backend.search({
+      query: prompt,
+      limit,
+      threshold: 0.35,
+      categories: categoriesForPrompt(prompt),
+      scope: this.withDefaultScope(),
+    });
   }
 
   queueAutomaticCapture(text: string, target?: NotificationTarget): boolean {
@@ -192,6 +176,54 @@ export class MemoryService {
     });
 
     return true;
+  }
+
+  queueLLMExtraction(
+    sessionManager: SessionManagerLike,
+    model: Model<Api> | undefined,
+    target?: NotificationTarget,
+  ): boolean {
+    if (!model) return false;
+
+    const messages = selectMemoryWorthMessages(collectSessionMessages(sessionManager));
+    if (messages.length < 4) return false;
+
+    enqueueWriteTask({
+      label: "Memory LLM extraction",
+      ...(target ? { target } : {}),
+      task: async () => {
+        const candidates = await extractMemoriesFromMessages(messages, model);
+        for (const candidate of candidates) {
+          if (candidate.confidence < 0.6) continue;
+          await this.addCandidateIfNovel(candidate.text, candidate.text.toLowerCase(), {
+            category: candidate.category,
+            categories: [candidate.category],
+            durability: candidate.durability,
+            confidence: candidate.confidence,
+            source: "llm_extracted",
+            trigger_reasons: [candidate.reason],
+            assistant_id: DEFAULT_AGENT_ID,
+            auto_saved: true,
+          });
+        }
+      },
+    });
+
+    return true;
+  }
+
+  queueConsolidation(target?: NotificationTarget): void {
+    if (!this.backend.consolidate) return;
+
+    const consolidate = this.backend.consolidate.bind(this.backend);
+
+    enqueueWriteTask({
+      label: "Memory consolidation",
+      ...(target ? { target } : {}),
+      task: async () => {
+        await consolidate();
+      },
+    });
   }
 
   async addCandidateIfNovel(text: string, normalized: string, metadata: JsonObject): Promise<"saved" | "skipped"> {

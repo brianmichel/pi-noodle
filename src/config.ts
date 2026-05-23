@@ -59,6 +59,24 @@ export function resolveConfig(): NoodleConfig {
   if (env["EMBEDDING_BASE_URL"]) config.embedding.baseUrl = env["EMBEDDING_BASE_URL"];
   if (env["EMBEDDING_MODEL"]) config.embedding.model = env["EMBEDDING_MODEL"];
 
+  // Extractor env overrides
+  if (env["NOODLE_EXTRACTOR_ENABLED"] !== undefined) {
+    if (!config.extractor) config.extractor = { enabled: false };
+    config.extractor.enabled = env["NOODLE_EXTRACTOR_ENABLED"] !== "false";
+  }
+  if (env["NOODLE_EXTRACTOR_MODEL"]) {
+    if (!config.extractor) config.extractor = { enabled: true };
+    config.extractor.model = env["NOODLE_EXTRACTOR_MODEL"];
+    config.extractor.enabled = true;
+  }
+  if (env["NOODLE_EXTRACTOR_TRIGGER_EVERY"]) {
+    const n = parseInt(env["NOODLE_EXTRACTOR_TRIGGER_EVERY"], 10);
+    if (!isNaN(n) && n > 0) {
+      if (!config.extractor) config.extractor = { enabled: true };
+      config.extractor.triggerEvery = n;
+    }
+  }
+
   return config;
 }
 

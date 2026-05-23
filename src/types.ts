@@ -1,5 +1,18 @@
 export type NoodleDbMode = "local" | "cloud";
 
+export type NoodleExtractorConfig = {
+  /** Whether LLM-based extraction is active. */
+  enabled: boolean;
+  /**
+   * Model ID to use for extraction (e.g. "claude-haiku-4-5-20251001").
+   * Must be a model already configured in Pi. Defaults to Pi's currently
+   * active model when unset.
+   */
+  model?: string;
+  /** Number of user turns between automatic extraction runs. Defaults to 10. */
+  triggerEvery?: number;
+};
+
 export type NoodleConfig = {
   db: {
     mode: NoodleDbMode;
@@ -20,11 +33,13 @@ export type NoodleConfig = {
     /** Model name */
     model: string;
   };
+  extractor?: NoodleExtractorConfig;
 };
 
 export type NoodleConfigPartial = {
   db?: Partial<NoodleConfig["db"]> & { mode?: NoodleDbMode };
   embedding?: Partial<NoodleConfig["embedding"]>;
+  extractor?: Partial<NoodleExtractorConfig>;
 };
 
 export type JsonObject = Record<string, unknown>;

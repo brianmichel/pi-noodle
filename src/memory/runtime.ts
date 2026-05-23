@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 
 import { createClient } from "@libsql/client";
 import { resolveConfig } from "../config.ts";
+import type { NoodleConfig } from "../types.ts";
 import type { MemoryBackend } from "./backend.ts";
 import { createOpenAIEmbedder } from "./embedders/openai.ts";
 import { MemoryService } from "./service.ts";
@@ -20,15 +21,11 @@ import { TursoBackend } from "./turso-backend.ts";
 // Use /noodle setup to configure interactively.
 // ---------------------------------------------------------------------------
 
-function createBackend(): MemoryBackend {
-  const config = resolveConfig();
-
-  // Ensure parent directory exists for local mode
+function createBackend(config: NoodleConfig): MemoryBackend {
   if (config.db.mode === "local") {
     mkdirSync(dirname(config.db.path), { recursive: true });
   }
 
-  // Build the libSQL client URL
   let dbUrl: string;
   if (config.db.mode === "cloud") {
     dbUrl = config.db.url ?? "libsql://";
@@ -52,4 +49,14 @@ function createBackend(): MemoryBackend {
   return new TursoBackend(db, embedder);
 }
 
-export const memoryService = new MemoryService(createBackend());
+const config = resolveConfig();
+export const memoryService = new MemoryService(createBackend(config));
+
+export const EXTRACTOR_DEFAULT_MODEL = "deepseek/deepseek-v4-flash:free";
+
+/** Whether LLM extraction is enabled (requires extractor.enabled in config). */
+export const extractorEnabled = config.extractor?.enabled ?? false;
+/** Model ID to use for extraction; falls back to the default free model when unset. */
+export const extractorModelId = config.extractor?.model ?? EXTRACTOR_DEFAULT_MODEL;
+/** How many user turns trigger an extraction pass. */
+export const extractorTriggerEvery = config.extractor?.triggerEvery ?? 10;

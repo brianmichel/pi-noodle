@@ -1,5 +1,6 @@
 import type {
   AddMemoryInput,
+  ConsolidationReport,
   ConversationCaptureInput,
   MemoryListInput,
   MemoryRecord,
@@ -15,4 +16,5 @@ export interface MemoryBackend {
   update(id: string, input: UpdateMemoryInput): Promise<void>;
   delete(id: string): Promise<void>;
   captureConversation?(input: ConversationCaptureInput): Promise<void>;
+  consolidate?(): Promise<ConsolidationReport>;
 }

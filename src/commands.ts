@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import { resolveConfig, resolveConfigPath, writeConfig } from "./config.ts";
+import { EXTRACTOR_DEFAULT_MODEL, memoryService } from "./memory/runtime.ts";
 import { maskSecret } from "./utils.ts";
 import {
   isExplorerRunning,
@@ -44,12 +45,17 @@ type CtxUi = {
 export function registerCommands(pi: ExtensionAPI): void {
   pi.registerCommand("noodle", {
     description:
-      "Noodle memory config — /noodle | /noodle setup | /noodle init | /noodle web [dev] [port] | /noodle web stop",
+      "Noodle memory config — /noodle | /noodle setup | /noodle init | /noodle review | /noodle web [dev] [port] | /noodle web stop",
     handler: async (args, ctx) => {
       const sub = args.trim();
 
       if (sub === "setup") {
         await runSetup(ctx.ui as unknown as CtxUi);
+        return;
+      }
+
+      if (sub === "review") {
+        await runReview(ctx.ui as unknown as CtxUi);
         return;
       }
 
@@ -120,6 +126,16 @@ export function registerCommands(pi: ExtensionAPI): void {
       );
       ctx.ui.notify(`Endpoint: ${config.embedding.baseUrl}`, "info");
       ctx.ui.notify(`API key: ${maskSecret(config.embedding.apiKey)}`, "info");
+      if (config.extractor?.enabled) {
+        const ec = config.extractor;
+        const modelLabel = ec.model ?? EXTRACTOR_DEFAULT_MODEL;
+        ctx.ui.notify(
+          `Extractor: enabled  ${modelLabel}  every ${ec.triggerEvery ?? 10} turns`,
+          "info",
+        );
+      } else {
+        ctx.ui.notify("Extractor: disabled  (run /noodle setup to enable)", "info");
+      }
     },
   });
 }
@@ -147,19 +163,31 @@ async function runSetup(ui: CtxUi): Promise<void> {
 
     const embedConfig = await collectEmbedding(ui, provider);
 
-    // 3. Confirm
-    const summary = [
+    // 3. LLM extractor (optional)
+    const extractorConfig = await collectExtractor(ui);
+
+    // 4. Confirm
+    const summaryLines = [
       `Database: ${dbMode}  ${dbConfig.summary}`,
       `Embedding: ${provider}  ${embedConfig.summary}`,
-    ].join("\n");
+    ];
+    if (extractorConfig) {
+      summaryLines.push(`Extractor: enabled  ${extractorConfig.partial.model ?? "gpt-4o-mini"}`);
+    } else {
+      summaryLines.push("Extractor: disabled");
+    }
 
-    const ok = await ui.confirm("Save config?", summary);
+    const ok = await ui.confirm("Save config?", summaryLines.join("\n"));
     if (!ok) {
       ui.notify("Setup cancelled.", "info");
       return;
     }
 
-    writeConfig({ db: dbConfig.partial, embedding: embedConfig.partial });
+    writeConfig({
+      db: dbConfig.partial,
+      embedding: embedConfig.partial,
+      ...(extractorConfig ? { extractor: extractorConfig.partial } : { extractor: { enabled: false } }),
+    });
     ui.notify("Config saved. /reload to apply.", "info");
   } catch (err) {
     ui.notify(
@@ -318,6 +346,106 @@ async function collectCustom(
     summary: `${model} @ ${baseUrl}`,
     partial: { provider: "custom", apiKey, baseUrl, model },
   };
+}
+
+// ---- Extractor collector ----
+
+async function collectExtractor(
+  ui: CtxUi,
+): Promise<{ summary: string; partial: Record<string, unknown> } | null> {
+  const enable = await ui.confirm(
+    "Enable LLM memory extractor?",
+    "Automatically identifies important facts in conversations using Pi's active model. No separate API key needed.",
+  );
+  if (!enable) return null;
+
+  const modelInput = await ui.input(
+    "Model ID to use (leave blank for default)",
+    EXTRACTOR_DEFAULT_MODEL,
+  );
+  const model = modelInput?.trim() || undefined;
+
+  const triggerInput = await ui.input("Extract every N turns (default 10)", "10");
+  const triggerEvery = parseInt(triggerInput ?? "10", 10);
+
+  return {
+    summary: model ? model : "active model",
+    partial: {
+      enabled: true,
+      ...(model ? { model } : {}),
+      triggerEvery: isNaN(triggerEvery) || triggerEvery < 1 ? 10 : triggerEvery,
+    },
+  };
+}
+
+// ---- Review command ----
+
+async function runReview(ui: CtxUi): Promise<void> {
+  try {
+    const memories = await memoryService.list();
+
+    // Focus on auto-saved memories; show at most 10
+    const autoSaved = memories
+      .filter((m) => {
+        const src = m.metadata.source as string | undefined;
+        return src === "heuristic" || src === "repetition" || src === "llm_extracted";
+      })
+      .slice(0, 10);
+
+    if (autoSaved.length === 0) {
+      ui.notify("No auto-saved memories to review.", "info");
+      return;
+    }
+
+    ui.notify("─── Auto-saved memories ───", "info");
+    for (let i = 0; i < autoSaved.length; i++) {
+      const m = autoSaved[i]!;
+      const src = m.metadata.source ?? "?";
+      const cat = m.category ?? m.categories[0] ?? "?";
+      const conf = typeof m.metadata.confidence === "number"
+        ? ` ${Math.round((m.metadata.confidence as number) * 100)}%`
+        : "";
+      ui.notify(`[${i + 1}] ${m.text}  (${cat}, ${src}${conf})`, "info");
+    }
+
+    const input = await ui.input(
+      "Enter numbers to delete (comma-separated), or press Enter to skip",
+      "",
+    );
+
+    if (!input?.trim()) {
+      ui.notify("No changes made.", "info");
+      return;
+    }
+
+    const indices = input
+      .split(",")
+      .map((s) => parseInt(s.trim(), 10) - 1)
+      .filter((n) => n >= 0 && n < autoSaved.length);
+
+    if (indices.length === 0) {
+      ui.notify("No valid selections — no changes made.", "info");
+      return;
+    }
+
+    const toDelete = indices.map((i) => autoSaved[i]!);
+    const preview = toDelete.map((m) => `  • ${m.text}`).join("\n");
+    const ok = await ui.confirm(`Delete ${toDelete.length} memories?`, preview);
+    if (!ok) {
+      ui.notify("Cancelled.", "info");
+      return;
+    }
+
+    for (const m of toDelete) {
+      if (m.id) await memoryService.delete(m.id);
+    }
+    ui.notify(`Deleted ${toDelete.length} memories.`, "info");
+  } catch (err) {
+    ui.notify(
+      `Review failed: ${err instanceof Error ? err.message : String(err)}`,
+      "error",
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------

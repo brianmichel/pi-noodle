@@ -12,12 +12,26 @@ const EXPLICIT_PATTERNS: Array<{
   durability: MemoryDurability;
   reason: string;
 }> = [
+  // Identity
   { pattern: /\bcall me\s+([^.!?\n]+)/i, category: "identity", durability: "durable", reason: "address_preference" },
-  { pattern: /\bi (?:prefer|like)\s+([^.!?\n]+)/i, category: "response_style", durability: "semi_durable", reason: "stated_preference" },
-  { pattern: /\b(always|never|don['’]t)\s+([^.!?\n]+)/i, category: "workflow", durability: "semi_durable", reason: "strong_preference" },
-  { pattern: /\buse\s+([^.!?\n]+?)\s+by default\b/i, category: "coding_pref", durability: "semi_durable", reason: "default_preference" },
-  { pattern: /\bremember\s+that\s+([^.!?\n]+)/i, category: "project", durability: "semi_durable", reason: "explicit_memory_request" },
   { pattern: /\bmy name is\s+([^.!?\n]+)/i, category: "identity", durability: "durable", reason: "identity_fact" },
+  // Role / background — "I’m a senior engineer" / "I am a data scientist"
+  // eslint-disable-next-line no-useless-escape
+  { pattern: new RegExp("\\bi(?:\\u0027m|\\u2019m| am) (?:a|an)\\s+([^.!?\\n,]{3,50}?)\\s*(?:,|\\.|$|\\s+(?:at|who|and|but)\\b)", "i"), category: "identity", durability: "durable", reason: "role_identity" },
+  // Expertise — "I’ve been doing Rust for 5 years" / "I’ve been using Go for years"
+  { pattern: new RegExp("\\bi(?:\\u0027ve|\\u2019ve| have) been (?:doing|using|working (?:with|on))\\s+([^.!?\\n]+?)\\s+for\\s+(?:\\d+\\s+years?|years|a (?:long|while))\\b", "i"), category: "identity", durability: "durable", reason: "expertise" },
+  // Preferences
+  { pattern: /\bi (?:prefer|like)\s+([^.!?\n]+)/i, category: "response_style", durability: "semi_durable", reason: "stated_preference" },
+  // eslint-disable-next-line no-useless-escape
+  { pattern: new RegExp("\\b((?:always|never|don\\u0027t|don\\u2019t)\\s+[^.!?\\n]+)", "i"), category: "workflow", durability: "semi_durable", reason: "strong_preference" },
+  // Coding defaults
+  { pattern: /\buse\s+([^.!?\n]+?)\s+by default\b/i, category: "coding_pref", durability: "semi_durable", reason: "default_preference" },
+  // Format preferences — "always give me bullet points" / "always use markdown"
+  { pattern: /\balways (?:give me|use|show|write)\s+(bullet points?|numbered lists?|markdown|plain text|code blocks?|prose|headers?)\b/i, category: "response_style", durability: "semi_durable", reason: "format_preference" },
+  // Explicit memory request
+  { pattern: /\bremember\s+that\s+([^.!?\n]+)/i, category: "project", durability: "semi_durable", reason: "explicit_memory_request" },
+  // Tech stack decisions — "we’re using Postgres for our DB" / "we are going with TypeScript"
+  { pattern: new RegExp("\\bwe(?:\\u0027re|\\u2019re| are) (?:using|going with)\\s+([^.!?\\n]+?)\\s+(?:for|as|in)\\s+(?:our|this|all|the)\\b", "i"), category: "project", durability: "semi_durable", reason: "tech_decision" },
 ];
 
 const RETRIEVAL_PATTERNS: RegExp[] = [
@@ -51,12 +65,25 @@ function normalizeMemoryText(text: string): string {
     .replace(/[.]+$/, "");
 }
 
-function canonicalizeCandidateText(category: MemoryCategory, sourceText: string, extracted: string): string {
-  if (category === "identity" && /\b(call me|my name is)\b/i.test(sourceText)) {
-    return `Call user ${extracted}`;
-  }
-  if (category === "response_style" && /\bprefer\b/i.test(sourceText)) {
-    return `User prefers ${extracted}`;
+function canonicalizeCandidateText(category: MemoryCategory, sourceText: string, extracted: string, reason: string): string {
+  switch (reason) {
+    case "address_preference":
+    case "identity_fact":
+      return `Call user ${extracted}`;
+    case "role_identity":
+      return `User is a ${extracted}`;
+    case "expertise":
+      return `User has experience with ${extracted}`;
+    case "stated_preference":
+      return `User prefers ${extracted}`;
+    case "default_preference":
+      return `Default to ${extracted}`;
+    case "format_preference":
+      return `User prefers ${extracted} format`;
+    case "tech_decision":
+      return `Team uses ${extracted}`;
+    default:
+      break;
   }
   if (category === "coding_pref" && /\bby default\b/i.test(sourceText)) {
     return `Default to ${extracted}`;
@@ -156,7 +183,7 @@ export function prefilterUserMessage(text: string): PrefilterResult {
     const durability = inferDurability(text, entry.durability);
     if (durability === "ephemeral") continue;
 
-    const canonicalText = canonicalizeCandidateText(category, text, extracted);
+    const canonicalText = canonicalizeCandidateText(category, text, extracted, entry.reason);
     candidateReasons.add(entry.reason);
     candidates.push({
       text: canonicalText,
