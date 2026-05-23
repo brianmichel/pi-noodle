@@ -429,7 +429,9 @@
               stroke-linecap="round"
               stroke-linejoin="round"
             >
-              <path d="M12 2a7 7 0 0 1 7 7c0 2.5-1.3 4.7-3.2 6.1L16 21H8l-.8-5.9A7 7 0 0 1 12 2z" />
+              <path
+                d="M12 2a7 7 0 0 1 7 7c0 2.5-1.3 4.7-3.2 6.1L16 21H8l-.8-5.9A7 7 0 0 1 12 2z"
+              />
             </svg>
             Memories
           </button>
@@ -585,9 +587,35 @@
       let all = [],
         expanded = new Set(),
         activeView = "memories",
-        ws;
+        ws,
+        pingTimer,
+        shuttingDown = false;
+
+      function disconnect() {
+        shuttingDown = true;
+        if (pingTimer) {
+          clearInterval(pingTimer);
+          pingTimer = null;
+        }
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          try {
+            ws.send(JSON.stringify({ type: "bye" }));
+          } catch (_) {}
+          ws.close(1000, "tab closed");
+        }
+      }
+
       function connect() {
+        if (shuttingDown) return;
         ws = new WebSocket("ws://" + location.host);
+        ws.onopen = function () {
+          if (pingTimer) clearInterval(pingTimer);
+          pingTimer = setInterval(function () {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: "ping" }));
+            }
+          }, 4000);
+        };
         ws.onmessage = function (e) {
           try {
             var msg = JSON.parse(e.data);
@@ -595,10 +623,19 @@
           } catch (_) {}
         };
         ws.onclose = function () {
-          setTimeout(connect, 1000);
+          if (pingTimer) {
+            clearInterval(pingTimer);
+            pingTimer = null;
+          }
+          if (!shuttingDown && document.visibilityState !== "hidden") {
+            setTimeout(connect, 1000);
+          }
         };
       }
       connect();
+
+      window.addEventListener("pagehide", disconnect);
+      window.addEventListener("beforeunload", disconnect);
 
       function toggleDark() {
         const h = document.documentElement;
@@ -782,9 +819,14 @@
 
       function setView(view) {
         activeView = view;
-        document.querySelectorAll(".nav-item[data-view]").forEach(function (el) {
-          el.classList.toggle("active", el.getAttribute("data-view") === view);
-        });
+        document
+          .querySelectorAll(".nav-item[data-view]")
+          .forEach(function (el) {
+            el.classList.toggle(
+              "active",
+              el.getAttribute("data-view") === view,
+            );
+          });
         document
           .getElementById("view-memories")
           .classList.toggle("active", view === "memories");

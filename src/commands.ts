@@ -1,9 +1,14 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { createClient } from "@libsql/client";
 
 import { resolveConfig, resolveConfigPath, writeConfig } from "./config.ts";
 import { maskSecret } from "./utils.ts";
-import { startMemoryExplorer } from "./web/server.ts";
+import {
+  isExplorerRunning,
+  openExplorerBrowser,
+  readExplorerState,
+  spawnExplorer,
+  stopExplorer,
+} from "./web/manager.ts";
 
 // ---------------------------------------------------------------------------
 // Option strings (Pi's ctx.ui.select takes string[], not objects)
@@ -39,7 +44,7 @@ type CtxUi = {
 export function registerCommands(pi: ExtensionAPI): void {
   pi.registerCommand("noodle", {
     description:
-      "Noodle memory config — /noodle | /noodle setup | /noodle init | /noodle web [dev] [port]",
+      "Noodle memory config — /noodle | /noodle setup | /noodle init | /noodle web [dev] [port] | /noodle web stop",
     handler: async (args, ctx) => {
       const sub = args.trim();
 
@@ -58,27 +63,43 @@ export function registerCommands(pi: ExtensionAPI): void {
         return;
       }
 
+      if (sub.match(/web\s+stop\b/)) {
+        if (stopExplorer()) {
+          ctx.ui.notify("Memory Explorer stopped.", "info");
+        } else {
+          ctx.ui.notify("Memory Explorer is not running.", "info");
+        }
+        return;
+      }
+
       if (sub.startsWith("web")) {
         const dev = /\bdev\b/.test(sub);
         const portMatch = sub.match(/\b(\d{2,5})\b/);
         const port = portMatch?.[1] ? parseInt(portMatch[1], 10) : 3000;
 
-        const config = resolveConfig();
-        const dbUrl = config.db.mode === "cloud"
-          ? config.db.url
-          : `file:${config.db.path}`;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const dbOptions: any = { url: dbUrl };
-        if (config.db.mode === "cloud" && config.db.authToken) {
-          dbOptions.authToken = config.db.authToken;
+        if (isExplorerRunning()) {
+          const running = readExplorerState();
+          const activePort = running?.port ?? port;
+          openExplorerBrowser(activePort);
+          ctx.ui.notify(
+            `Memory Explorer already running at http://localhost:${activePort}`,
+            "info",
+          );
+          return;
         }
 
-        const db = createClient(dbOptions as any);
+        const spawned = spawnExplorer(port, dev);
+        if (!spawned) {
+          ctx.ui.notify("Failed to start Memory Explorer.", "error");
+          return;
+        }
+
         ctx.ui.notify(
-          `Starting Noodle Memory Explorer${dev ? " (dev)" : ""} on http://localhost:${port}`,
+          dev
+            ? `Memory Explorer (dev) starting at http://localhost:${port} — use /noodle web stop when done`
+            : `Memory Explorer started at http://localhost:${port} — closes automatically when all tabs are closed`,
           "info",
         );
-        startMemoryExplorer(db, port, { dev });
         return;
       }
 
@@ -91,20 +112,14 @@ export function registerCommands(pi: ExtensionAPI): void {
         "info",
       );
       if (config.db.mode === "cloud" && config.db.authToken) {
-        ctx.ui.notify(
-          `Auth token: ${maskSecret(config.db.authToken)}`,
-          "info",
-        );
+        ctx.ui.notify(`Auth token: ${maskSecret(config.db.authToken)}`, "info");
       }
       ctx.ui.notify(
         `Embedding: ${config.embedding.provider}  ${config.embedding.model}`,
         "info",
       );
       ctx.ui.notify(`Endpoint: ${config.embedding.baseUrl}`, "info");
-      ctx.ui.notify(
-        `API key: ${maskSecret(config.embedding.apiKey)}`,
-        "info",
-      );
+      ctx.ui.notify(`API key: ${maskSecret(config.embedding.apiKey)}`, "info");
     },
   });
 }
@@ -119,12 +134,12 @@ async function runSetup(ui: CtxUi): Promise<void> {
 
     // 1. Database mode
     const dbChoice = await ui.select("Database mode", DB_MODE_OPTIONS);
-    const dbMode: "local" | "cloud" =
-      dbChoice?.startsWith("Cloud") ? "cloud" : "local";
+    const dbMode: "local" | "cloud" = dbChoice?.startsWith("Cloud")
+      ? "cloud"
+      : "local";
 
-    const dbConfig = dbMode === "cloud"
-      ? await collectCloudDb(ui)
-      : await collectLocalDb(ui);
+    const dbConfig =
+      dbMode === "cloud" ? await collectCloudDb(ui) : await collectLocalDb(ui);
 
     // 2. Embedding provider
     const pChoice = await ui.select("Embedding provider", PROVIDER_OPTIONS);
@@ -297,8 +312,7 @@ async function collectCustom(
     "text-embedding-3-small",
   );
 
-  const apiKey =
-    (await ui.input("API key (or placeholder)", "")) || "";
+  const apiKey = (await ui.input("API key (or placeholder)", "")) || "";
 
   return {
     summary: `${model} @ ${baseUrl}`,
@@ -333,6 +347,8 @@ function parseProvider(choice: string): string {
   return "custom";
 }
 
-function showDbTarget(config: { db: { mode: string; path: string; url?: string } }): string {
+function showDbTarget(config: {
+  db: { mode: string; path: string; url?: string };
+}): string {
   return config.db.mode === "cloud" ? (config.db.url ?? "") : config.db.path;
 }

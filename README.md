@@ -25,8 +25,9 @@ Settings are saved to `~/.pi/noodle/config.json` — memories travel with you ac
 /noodle           Show current config (paths, endpoint, masked API key)
 /noodle setup     Interactive configuration wizard with validation
 /noodle init      Create a default config file for manual editing
-/noodle web       Start the Memory Explorer web UI (http://localhost:3000)
-/noodle web dev   Dev mode — hot reload on save, server stays running
+/noodle web       Start the Memory Explorer (auto-stops when all tabs close)
+/noodle web stop  Stop the explorer immediately
+/noodle web dev   Dev mode — hot reload on save, use web stop when done
 /noodle web 8080  Start on a custom port
 ```
 
@@ -41,7 +42,7 @@ Launch a dark-themed web interface to browse, search, and visualize your memorie
 - **Text search** — substring matching on memory text
 - **Dark mode** — GitHub-inspired color scheme
 
-Run `/noodle web` in Pi and open the printed URL in your browser.
+Run `/noodle web` in Pi to open the explorer in your browser. The server runs in a background process and **shuts down automatically ~2 seconds after you close all tabs**. Use `/noodle web stop` to kill it manually.
 
 ## Config file
 
