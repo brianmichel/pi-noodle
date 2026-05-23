@@ -1,6 +1,17 @@
-import type { MemoryCandidate, MemoryCategory, MemoryDurability, PrefilterResult } from "./memory-types.ts";
+import type {
+  LocalSignal,
+  MemoryCandidate,
+  MemoryCategory,
+  MemoryDurability,
+  PrefilterResult,
+} from "./types.ts";
 
-const EXPLICIT_PATTERNS: Array<{ pattern: RegExp; category: MemoryCategory; durability: MemoryDurability; reason: string }> = [
+const EXPLICIT_PATTERNS: Array<{
+  pattern: RegExp;
+  category: MemoryCategory;
+  durability: MemoryDurability;
+  reason: string;
+}> = [
   { pattern: /\bcall me\s+([^.!?\n]+)/i, category: "identity", durability: "durable", reason: "address_preference" },
   { pattern: /\bi (?:prefer|like)\s+([^.!?\n]+)/i, category: "response_style", durability: "semi_durable", reason: "stated_preference" },
   { pattern: /\b(always|never|don['’]t)\s+([^.!?\n]+)/i, category: "workflow", durability: "semi_durable", reason: "strong_preference" },
@@ -73,8 +84,52 @@ export function shouldBlockSensitiveMemory(text: string): boolean {
   return SENSITIVE_PATTERNS.some((pattern) => pattern.test(text));
 }
 
-export function classifyPromptForRetrieval(prompt: string): boolean {
+export function shouldRetrieveMemories(prompt: string): boolean {
   return RETRIEVAL_PATTERNS.some((pattern) => pattern.test(prompt));
+}
+
+export function categoriesForPrompt(prompt: string): MemoryCategory[] {
+  const categories: MemoryCategory[] = ["identity", "response_style"];
+
+  if (/\b(code|implement|implementation|refactor|fix|test|review|debug|script|function|library|framework|tool|tooling|stack)\b/i.test(prompt)) {
+    categories.push("coding_pref", "workflow");
+  }
+
+  if (/\b(repo|project|convention|branch|workflow|team|codebase)\b/i.test(prompt)) {
+    categories.push("project", "workflow");
+  }
+
+  return Array.from(new Set(categories));
+}
+
+export function tokenizePrompt(text: string): string[] {
+  return text
+    .toLowerCase()
+    .split(/[^a-z0-9]+/i)
+    .filter((token) => token.length >= 3);
+}
+
+export function scoreMemoryText(memoryText: string, queryTokens: string[], categories: string[], memoryCategories: string[], durability?: unknown): number {
+  let score = 0;
+  const normalizedText = memoryText.toLowerCase();
+
+  for (const token of queryTokens) {
+    if (normalizedText.includes(token)) score += 2;
+  }
+
+  for (const category of categories) {
+    if (memoryCategories.includes(category)) score += 3;
+  }
+
+  if (durability === "durable") score += 1;
+  return score;
+}
+
+export function shouldPromoteCandidate(candidate: MemoryCandidate, signal: LocalSignal): boolean {
+  if (candidate.explicit) return true;
+  if (candidate.category === "identity") return true;
+  if (signal.count >= 3) return true;
+  return candidate.confidence >= 0.9 && signal.count >= 2;
 }
 
 export function prefilterUserMessage(text: string): PrefilterResult {
@@ -84,7 +139,7 @@ export function prefilterUserMessage(text: string): PrefilterResult {
   if (shouldBlockSensitiveMemory(text)) {
     return {
       hasCandidate: false,
-      shouldRetrieve: classifyPromptForRetrieval(text),
+      shouldRetrieve: shouldRetrieveMemories(text),
       candidateReasons: ["sensitive_content_blocked"],
       candidates,
     };
@@ -122,7 +177,7 @@ export function prefilterUserMessage(text: string): PrefilterResult {
 
   return {
     hasCandidate: deduped.length > 0,
-    shouldRetrieve: classifyPromptForRetrieval(text),
+    shouldRetrieve: shouldRetrieveMemories(text),
     candidateReasons: Array.from(candidateReasons),
     candidates: deduped,
   };

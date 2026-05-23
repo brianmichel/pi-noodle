@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 
 import {
   buildSignalKey,
-  classifyPromptForRetrieval,
   prefilterUserMessage,
   shouldBlockSensitiveMemory,
-} from "../src/memory-heuristics.ts";
+  shouldRetrieveMemories,
+} from "../src/memory/policy.ts";
 
 test("detects durable identity memories", () => {
   const result = prefilterUserMessage("Please call me small dog.");
@@ -51,6 +51,6 @@ test("buildSignalKey is stable for dedupe", () => {
 });
 
 test("retrieval classifier skips casual chatter and matches work prompts", () => {
-  assert.equal(classifyPromptForRetrieval("hey there"), false);
-  assert.equal(classifyPromptForRetrieval("Can you refactor this backend function?"), true);
+  assert.equal(shouldRetrieveMemories("hey there"), false);
+  assert.equal(shouldRetrieveMemories("Can you refactor this backend function?"), true);
 });

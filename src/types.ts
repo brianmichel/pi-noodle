@@ -6,11 +6,6 @@ export type Mem0Config = {
 
 export type JsonObject = Record<string, unknown>;
 
-export type MemoryMessage = {
-  role: string;
-  content: string;
-};
-
 export type NotifyLevel = "info" | "error";
 
 export type NotificationTarget = {
@@ -31,14 +26,4 @@ export type SessionEntryLike = {
     role?: string;
     content?: unknown;
   };
-};
-
-export type SearchParams = {
-  query: string;
-  user_id?: string;
-  agent_id?: string;
-  run_id?: string;
-  top_k?: number;
-  threshold?: number;
-  filters?: JsonObject;
 };

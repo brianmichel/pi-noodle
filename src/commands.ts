@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
+import { requestJsonWithFallback } from "./api.ts";
 import {
   clearConfig,
   readStoredConfig,
@@ -8,11 +9,12 @@ import {
   resolveSystemUserId,
   writeConfig,
 } from "./config.ts";
+import { memoryService } from "./memory/runtime.ts";
 import { maskSecret, normalizeBaseUrl, normalizeOptionalString } from "./utils.ts";
 
 export function registerCommands(pi: ExtensionAPI): void {
-  pi.registerCommand("mem0-config", {
-    description: "Configure Mem0 extension: /mem0-config show | clear | set <baseUrl> <apiKey> [userId]",
+  pi.registerCommand("memory-config", {
+    description: "Configure the default Mem0 memory backend: /memory-config show | clear | set <baseUrl> <apiKey> [userId]",
     handler: async (args, ctx) => {
       const trimmed = (args || "").trim();
       const configPath = resolveConfigPath();
@@ -26,17 +28,17 @@ export function registerCommands(pi: ExtensionAPI): void {
           || await resolveSystemUserId()
           || "(unresolved)";
 
-        ctx.ui.notify(`Mem0 config path: ${configPath}`, "info");
-        ctx.ui.notify(`Mem0 base URL: ${baseUrl}`, "info");
-        ctx.ui.notify(`Mem0 API key: ${maskSecret(apiKey)}`, "info");
-        ctx.ui.notify(`Mem0 configured user ID: ${configuredUserId}`, "info");
-        ctx.ui.notify(`Mem0 effective user ID: ${effectiveUserId}`, "info");
+        ctx.ui.notify(`Memory backend config path: ${configPath}`, "info");
+        ctx.ui.notify(`Memory backend base URL: ${baseUrl}`, "info");
+        ctx.ui.notify(`Memory backend API key: ${maskSecret(apiKey)}`, "info");
+        ctx.ui.notify(`Memory backend configured user ID: ${configuredUserId}`, "info");
+        ctx.ui.notify(`Memory backend effective user ID: ${effectiveUserId}`, "info");
         return;
       }
 
       if (trimmed === "clear") {
         await clearConfig();
-        ctx.ui.notify(`Cleared Mem0 config file at ${configPath}.`, "info");
+        ctx.ui.notify(`Cleared memory backend config file at ${configPath}.`, "info");
         return;
       }
 
@@ -47,7 +49,7 @@ export function registerCommands(pi: ExtensionAPI): void {
         const userId = parts[3];
 
         if (!baseUrl || !apiKey) {
-          ctx.ui.notify("Usage: /mem0-config set <baseUrl> <apiKey> [userId]", "error");
+          ctx.ui.notify("Usage: /memory-config set <baseUrl> <apiKey> [userId]", "error");
           return;
         }
 
@@ -56,51 +58,36 @@ export function registerCommands(pi: ExtensionAPI): void {
           apiKey,
           ...(userId ? { userId } : {}),
         });
-        ctx.ui.notify(`Saved Mem0 config to ${configPath} (${normalizeBaseUrl(baseUrl)}).`, "info");
+        ctx.ui.notify(`Saved memory backend config to ${configPath} (${normalizeBaseUrl(baseUrl)}).`, "info");
         return;
       }
 
-      ctx.ui.notify("Usage: /mem0-config show | clear | set <baseUrl> <apiKey> [userId]", "error");
+      ctx.ui.notify("Usage: /memory-config show | clear | set <baseUrl> <apiKey> [userId]", "error");
     },
   });
 
-  pi.registerCommand("mem0-test", {
-    description: "Test the configured Mem0 API connection",
+  pi.registerCommand("memory-test", {
+    description: "Test the configured memory backend connection",
     handler: async (_args, ctx) => {
       try {
         const config = await resolveConfig();
         const headers = { "X-API-Key": config.apiKey, Accept: "application/json" };
 
-        const authStatus = await fetch(`${config.baseUrl}/auth/setup-status`, {
-          headers,
-        });
-        const authBody = await authStatus.text();
-
-        if (authStatus.status === 404) {
-          ctx.ui.notify(
-            "Mem0 auth/setup-status returned 404. This usually means your self-hosted Mem0 build does not expose that auth route.",
-            "info",
-          );
-        } else {
-          ctx.ui.notify(`Mem0 setup-status: ${authStatus.status} ${authBody}`.slice(0, 500), "info");
+        try {
+          const authStatus = await requestJsonWithFallback({
+            baseUrl: config.baseUrl,
+            headers,
+            method: "GET",
+            pathname: "/auth/setup-status",
+            label: "Memory backend auth status",
+          });
+          ctx.ui.notify(`Memory backend auth status: ${JSON.stringify(authStatus)}`.slice(0, 500), "info");
+        } catch (error) {
+          ctx.ui.notify(`Auth status check skipped: ${error instanceof Error ? error.message : String(error)}`.slice(0, 500), "info");
         }
 
-        const docsStatus = await fetch(`${config.baseUrl}/docs`, {
-          headers: { Accept: "text/html,application/json" },
-        });
-        ctx.ui.notify(`Mem0 docs endpoint: ${docsStatus.status}`, docsStatus.ok ? "info" : "error");
-
-        const memoriesUrl = new URL(`${config.baseUrl}/memories`);
-        if (config.userId) {
-          memoriesUrl.searchParams.set("user_id", config.userId);
-        }
-
-        const memoriesStatus = await fetch(memoriesUrl, { headers });
-        const memoriesBody = await memoriesStatus.text();
-        ctx.ui.notify(
-          `Mem0 memories endpoint: ${memoriesStatus.status} ${memoriesBody}`.slice(0, 500),
-          memoriesStatus.ok ? "info" : "error",
-        );
+        const memories = await memoryService.list();
+        ctx.ui.notify(`Memory backend list succeeded: ${memories.length} memories visible.`, "info");
       } catch (error) {
         ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
       }

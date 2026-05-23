@@ -1,8 +1,7 @@
-import { resolveConfig } from "./config.ts";
-import type { JsonObject, SearchParams } from "./types.ts";
-import { normalizeOptionalString, safeJsonParse } from "./utils.ts";
+import type { JsonObject } from "./types.ts";
+import { safeJsonParse } from "./utils.ts";
 
-function buildCandidateBaseUrls(baseUrl: string): string[] {
+export function buildCandidateBaseUrls(baseUrl: string): string[] {
   const normalized = baseUrl.replace(/\/+$/, "");
   const candidates = [normalized];
 
@@ -15,64 +14,46 @@ function buildCandidateBaseUrls(baseUrl: string): string[] {
   return [...new Set(candidates)];
 }
 
-async function executeRequest(
-  baseUrl: string,
-  method: string,
-  pathname: string,
-  headers: Record<string, string>,
-  body?: unknown,
-  query?: Record<string, string | number | boolean | undefined>,
-): Promise<{ response: Response; text: string; parsed: unknown }> {
-  const url = new URL(`${baseUrl}${pathname}`);
+type RequestWithFallbackInput = {
+  baseUrl: string;
+  method: string;
+  pathname: string;
+  headers: Record<string, string>;
+  body?: unknown;
+  query?: Record<string, string | number | boolean | undefined>;
+  label: string;
+};
 
-  if (query) {
-    for (const [key, value] of Object.entries(query)) {
+async function executeRequest(baseUrl: string, input: RequestWithFallbackInput): Promise<{ response: Response; text: string; parsed: unknown }> {
+  const url = new URL(`${baseUrl}${input.pathname}`);
+
+  if (input.query) {
+    for (const [key, value] of Object.entries(input.query)) {
       if (value === undefined || value === "") continue;
       url.searchParams.set(key, String(value));
     }
   }
 
   const response = await fetch(url, {
-    method,
-    headers,
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    method: input.method,
+    headers: input.headers,
+    ...(input.body === undefined ? {} : { body: JSON.stringify(input.body) }),
   });
 
   const text = await response.text();
-  const parsed = text ? safeJsonParse(text) : undefined;
-  return { response, text, parsed };
+  return {
+    response,
+    text,
+    parsed: text ? safeJsonParse(text) : undefined,
+  };
 }
 
-export async function mem0Request(
-  method: string,
-  pathname: string,
-  body?: unknown,
-  query?: Record<string, string | number | boolean | undefined>,
-): Promise<unknown> {
-  const config = await resolveConfig();
-
-  const headers: Record<string, string> = {
-    "X-API-Key": config.apiKey,
-    Accept: "application/json",
-  };
-
-  if (body !== undefined) {
-    headers["Content-Type"] = "application/json";
-  }
-
-  const candidateBaseUrls = buildCandidateBaseUrls(config.baseUrl);
+export async function requestJsonWithFallback(input: RequestWithFallbackInput): Promise<unknown> {
+  const candidateBaseUrls = buildCandidateBaseUrls(input.baseUrl);
   let lastFailure: { status: number; detail: string } | undefined;
 
   for (const candidateBaseUrl of candidateBaseUrls) {
-    const { response, text, parsed } = await executeRequest(
-      candidateBaseUrl,
-      method,
-      pathname,
-      headers,
-      body,
-      query,
-    );
-
+    const { response, text, parsed } = await executeRequest(candidateBaseUrl, input);
     if (response.ok) {
       return parsed ?? { ok: true, status: response.status };
     }
@@ -85,27 +66,12 @@ export async function mem0Request(
     }
   }
 
-  throw new Error(`Mem0 ${method} ${pathname} failed (${lastFailure?.status ?? "unknown"}): ${lastFailure?.detail ?? "Unknown error"}`);
+  throw new Error(`${input.label} failed (${lastFailure?.status ?? "unknown"}): ${lastFailure?.detail ?? "Unknown error"}`);
 }
 
-export function buildSearchPayload(params: SearchParams): JsonObject {
-  const payload: JsonObject = {
-    query: params.query,
-  };
-
-  if (params.top_k !== undefined) payload.top_k = params.top_k;
-  if (params.threshold !== undefined) payload.threshold = params.threshold;
-
-  const filters: JsonObject = { ...(params.filters ?? {}) };
-  if (params.user_id) filters.user_id = params.user_id;
-
-  const explicitAgentId = normalizeOptionalString(params.agent_id);
-  if (explicitAgentId) filters.agent_id = explicitAgentId;
-  if (params.run_id) filters.run_id = params.run_id;
-
-  if (Object.keys(filters).length > 0) {
-    payload.filters = filters;
-  }
-
-  return payload;
+export function buildCategoryFilterPayload(category?: string, categories?: string[]): JsonObject {
+  const filter: JsonObject = {};
+  if (category) filter.category = category;
+  if (categories && categories.length > 0) filter.categories = categories;
+  return filter;
 }
