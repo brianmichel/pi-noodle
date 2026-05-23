@@ -1,7 +1,9 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { createClient } from "@libsql/client";
 
 import { resolveConfig, resolveConfigPath, writeConfig } from "./config.ts";
 import { maskSecret } from "./utils.ts";
+import { startMemoryExplorer } from "./web/server.ts";
 
 // ---------------------------------------------------------------------------
 // Option strings (Pi's ctx.ui.select takes string[], not objects)
@@ -37,7 +39,7 @@ type CtxUi = {
 export function registerCommands(pi: ExtensionAPI): void {
   pi.registerCommand("noodle", {
     description:
-      "Noodle memory config — /noodle | /noodle setup | /noodle init",
+      "Noodle memory config — /noodle | /noodle setup | /noodle init | /noodle web [dev] [port]",
     handler: async (args, ctx) => {
       const sub = args.trim();
 
@@ -53,6 +55,30 @@ export function registerCommands(pi: ExtensionAPI): void {
           `Created config at ${path}. Run /noodle setup to configure.`,
           "info",
         );
+        return;
+      }
+
+      if (sub.startsWith("web")) {
+        const dev = /\bdev\b/.test(sub);
+        const portMatch = sub.match(/\b(\d{2,5})\b/);
+        const port = portMatch?.[1] ? parseInt(portMatch[1], 10) : 3000;
+
+        const config = resolveConfig();
+        const dbUrl = config.db.mode === "cloud"
+          ? config.db.url
+          : `file:${config.db.path}`;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const dbOptions: any = { url: dbUrl };
+        if (config.db.mode === "cloud" && config.db.authToken) {
+          dbOptions.authToken = config.db.authToken;
+        }
+
+        const db = createClient(dbOptions as any);
+        ctx.ui.notify(
+          `Starting Noodle Memory Explorer${dev ? " (dev)" : ""} on http://localhost:${port}`,
+          "info",
+        );
+        startMemoryExplorer(db, port, { dev });
         return;
       }
 

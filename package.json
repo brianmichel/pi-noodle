@@ -24,7 +24,8 @@
     "build": "npm run check",
     "check": "tsc -p tsconfig.json --noEmit",
     "clean": "echo 'nothing to clean'",
-    "test": "node --test --experimental-strip-types test/**/*.test.ts"
+    "test": "node --test --experimental-strip-types test/**/*.test.ts",
+    "web:dev": "bun run src/web/dev.ts"
   },
   "exports": {
     ".": "./index.ts"
@@ -44,6 +45,7 @@
   "devDependencies": {
     "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*",
+    "@types/bun": "^1.2.0",
     "@types/node": "^24.10.1",
     "typescript": "^5.9.3"
   }

@@ -25,7 +25,23 @@ Settings are saved to `~/.pi/noodle/config.json` — memories travel with you ac
 /noodle           Show current config (paths, endpoint, masked API key)
 /noodle setup     Interactive configuration wizard with validation
 /noodle init      Create a default config file for manual editing
+/noodle web       Start the Memory Explorer web UI (http://localhost:3000)
+/noodle web dev   Dev mode — hot reload on save, server stays running
+/noodle web 8080  Start on a custom port
 ```
+
+For UI development outside Pi, run `npm run web:dev` from the repo — it connects to your configured database and reloads the browser whenever you edit `src/web/index.html`.
+
+### Memory Explorer Web UI
+
+Launch a dark-themed web interface to browse, search, and visualize your memories:
+
+- **Live stats** — total memories, categories, scopes
+- **Category filter** — dropdown of all stored categories
+- **Text search** — substring matching on memory text
+- **Dark mode** — GitHub-inspired color scheme
+
+Run `/noodle web` in Pi and open the printed URL in your browser.
 
 ## Config file
 
