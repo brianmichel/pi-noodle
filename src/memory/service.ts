@@ -73,13 +73,22 @@ export class MemoryService {
   async findRelevantMemories(prompt: string, limit = 3): Promise<MemoryRecord[]> {
     if (!shouldRetrieveMemories(prompt)) return [];
 
-    return this.backend.search({
+    const results = await this.backend.search({
       query: prompt,
       limit,
       threshold: 0.35,
       categories: categoriesForPrompt(prompt),
       scope: this.withDefaultScope(),
     });
+
+    const ids = results
+      .map((record) => record.id)
+      .filter((id): id is string => typeof id === "string" && id.length > 0);
+    if (ids.length > 0) {
+      await this.backend.recordRetrievals?.(ids);
+    }
+
+    return results;
   }
 
   queueAutomaticCapture(text: string, target?: NotificationTarget): boolean {

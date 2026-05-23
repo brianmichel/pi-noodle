@@ -274,4 +274,26 @@ describe("TursoBackend", () => {
       /Provide text or metadata/,
     );
   });
+
+  it("increments retrieval_count and last_retrieved", async () => {
+    await backend.add({
+      text: "Retrieval counter test memory",
+      scope: { assistantId: "agent-retrieval" },
+    });
+
+    const list = await backend.list({ scope: { assistantId: "agent-retrieval" } });
+    const record = list.find((m) => m.text === "Retrieval counter test memory");
+    assert.ok(record?.id);
+
+    await backend.recordRetrievals([record!.id!]);
+    await backend.recordRetrievals([record!.id!]);
+
+    const result = await db.execute({
+      sql: "SELECT retrieval_count, last_retrieved FROM memories WHERE id = ?",
+      args: [record!.id!],
+    });
+    const row = result.rows[0] as { retrieval_count: number; last_retrieved: number };
+    assert.equal(row.retrieval_count, 2);
+    assert.ok(row.last_retrieved);
+  });
 });

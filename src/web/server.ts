@@ -102,7 +102,7 @@ export function startMemoryExplorer(
         try {
           const result = await db.execute(`
             SELECT id, text, category, categories, user_id, assistant_id, session_id,
-                   metadata, created_at, retrieval_count
+                   metadata, created_at, retrieval_count, last_retrieved
             FROM memories
             ORDER BY created_at DESC
           `);
@@ -175,19 +175,32 @@ function rowToMemory(row: any): any {
     id: row.id,
     text: row.text,
     category: row.category,
-    categories: asStringArray(safeJsonParse(row.categories)),
+    categories: asStringArray(safeJsonArray(row.categories)),
     scope: {
       userId: row.user_id,
       assistantId: row.assistant_id,
       sessionId: row.session_id,
     },
-    metadata: safeJsonParse(row.metadata),
+    metadata: safeJsonObject(row.metadata),
     createdAt: row.created_at,
-    retrievalCount: row.retrieval_count,
+    retrievalCount: row.retrieval_count ?? 0,
+    lastRetrieved: row.last_retrieved ?? null,
   };
 }
 
-function safeJsonParse(value: unknown): unknown {
+function safeJsonObject(value: unknown): Record<string, unknown> {
+  if (typeof value !== "string") return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function safeJsonArray(value: unknown): unknown {
   if (typeof value !== "string") return [];
   try {
     return JSON.parse(value);
