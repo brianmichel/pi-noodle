@@ -20,7 +20,8 @@
   "scripts": {
     "build": "npm run check",
     "check": "tsc -p tsconfig.json --noEmit",
-    "clean": "echo 'nothing to clean'"
+    "clean": "echo 'nothing to clean'",
+    "test": "node --test --experimental-strip-types test/**/*.test.ts"
   },
   "exports": {
     ".": "./index.ts"
