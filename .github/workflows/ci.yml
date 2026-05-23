@@ -23,8 +23,5 @@ jobs:
       - name: Install dependencies
         run: mise run install
 
-      - name: Typecheck
-        run: mise run check
-
-      - name: Run tests
-        run: npm test
+      - name: Check
+        run: mise run precommit
