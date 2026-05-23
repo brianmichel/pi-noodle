@@ -22,10 +22,10 @@ class QualityEvalBackend implements MemoryBackend {
     this.records.push({
       id: String(this.id++),
       text,
-      category: input.category,
       categories: input.categories ?? (input.category ? [input.category] : []),
       metadata: input.metadata ?? {},
-      scope: input.scope,
+      ...(input.category ? { category: input.category } : {}),
+      ...(input.scope ? { scope: input.scope } : {}),
     });
   }
 
