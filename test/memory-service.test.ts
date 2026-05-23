@@ -56,6 +56,12 @@ class FakeMemoryBackend implements MemoryBackend {
   async captureConversation(input: ConversationCaptureInput): Promise<void> {
     this.conversationCaptures.push(input);
   }
+
+  public readonly recordedRetrievals: string[][] = [];
+
+  async recordRetrievals(ids: string[]): Promise<void> {
+    this.recordedRetrievals.push(ids);
+  }
 }
 
 test("MemoryService dedupes novel candidates before writing", async () => {
@@ -110,6 +116,11 @@ test("MemoryService retrieval ranks relevant memories and skips chatter", async 
   assert.equal(coding.length > 0, true);
   assert.equal(coding[0]?.text, "Default to Elixir");
   assert.deepEqual(chatter, []);
+  assert.equal(backend.recordedRetrievals.length, 1);
+  assert.deepEqual(
+    backend.recordedRetrievals[0],
+    coding.map((record) => record.id).filter((id): id is string => typeof id === "string"),
+  );
 });
 
 test("MemoryService automatic capture promotes repeated candidates", async () => {

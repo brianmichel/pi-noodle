@@ -284,6 +284,22 @@ export class TursoBackend implements MemoryBackend {
       .map(({ _score: score, ...rec }) => ({ ...rec, score }));
   }
 
+  async recordRetrievals(ids: string[]): Promise<void> {
+    await this.ensureSchema();
+    if (ids.length === 0) return;
+
+    const now = Date.now();
+    for (const id of ids) {
+      await this.db.execute({
+        sql: `UPDATE memories
+              SET retrieval_count = COALESCE(retrieval_count, 0) + 1,
+                  last_retrieved = ?
+              WHERE id = ?`,
+        args: [now, id],
+      });
+    }
+  }
+
   async list(input?: MemoryListInput): Promise<MemoryRecord[]> {
     await this.ensureSchema();
 

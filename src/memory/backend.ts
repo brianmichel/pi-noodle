@@ -15,6 +15,8 @@ export interface MemoryBackend {
   get(id: string): Promise<MemoryRecord | null>;
   update(id: string, input: UpdateMemoryInput): Promise<void>;
   delete(id: string): Promise<void>;
+  /** Bump retrieval stats when memories are injected into a prompt. */
+  recordRetrievals?(ids: string[]): Promise<void>;
   captureConversation?(input: ConversationCaptureInput): Promise<void>;
   consolidate?(): Promise<ConsolidationReport>;
 }
