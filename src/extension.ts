@@ -1,91 +1,137 @@
+import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-import { registerCommands } from "./commands.ts";
-import { extractorEnabled, extractorModelId, extractorTriggerEvery, memoryService } from "./memory/runtime.ts";
-import { flushPendingWrites } from "./session.ts";
-import { memoryTools } from "./tools.ts";
+import { registerCommands as registerCommandsRuntime } from "./commands.ts";
+import {
+  extractorEnabled as runtimeExtractorEnabled,
+  extractorModelId as runtimeExtractorModelId,
+  extractorTriggerEvery as runtimeExtractorTriggerEvery,
+  memoryService as runtimeMemoryService,
+} from "./memory/runtime.ts";
+import type { MemoryRecord } from "./memory/types.ts";
+import { flushPendingWrites as flushPendingWritesRuntime } from "./session.ts";
+import { memoryTools as runtimeMemoryTools } from "./tools.ts";
+import type { NotificationTarget, SessionManagerLike } from "./types.ts";
 
-export default function memoryExtension(pi: ExtensionAPI) {
-  const savedSessionSignatures = new Set<string>();
-  let sessionMessageCount = 0;
+type RegisteredTool = Parameters<ExtensionAPI["registerTool"]>[0];
 
-  pi.on("input", async (event, ctx) => {
-    if (event.source === "extension") return { action: "continue" };
+type MemoryServiceLike = {
+  queueAutomaticCapture: (text: string, target?: NotificationTarget) => boolean;
+  queueLLMExtraction: (sessionManager: SessionManagerLike, model: Model<Api> | undefined, target?: NotificationTarget) => boolean;
+  queueConsolidation: (target?: NotificationTarget) => void;
+  captureSessionConversation: (
+    sessionManager: SessionManagerLike,
+    reason: string,
+    savedSignatures: Set<string>,
+    options?: { target?: NotificationTarget; successMessage?: string },
+  ) => Promise<boolean>;
+  findRelevantMemories: (prompt: string, limit?: number) => Promise<MemoryRecord[]>;
+};
 
-    sessionMessageCount++;
-    memoryService.queueAutomaticCapture(event.text, ctx);
+export type MemoryExtensionDeps = {
+  memoryService: MemoryServiceLike;
+  extractorEnabled: boolean;
+  extractorModelId?: string;
+  extractorTriggerEvery: number;
+  flushPendingWrites: () => Promise<void>;
+  memoryTools: readonly RegisteredTool[];
+  registerCommands: (pi: ExtensionAPI) => void;
+};
 
-    if (extractorEnabled && sessionMessageCount % extractorTriggerEvery === 0) {
-      // Resolve the model: prefer the configured model ID; fall back to the active model.
-      const model =
-        ctx.modelRegistry.getAll().find((m) => m.id === extractorModelId) ??
-        ctx.model;
-      memoryService.queueLLMExtraction(ctx.sessionManager, model, ctx);
-    }
+const runtimeDeps: MemoryExtensionDeps = {
+  memoryService: runtimeMemoryService,
+  extractorEnabled: runtimeExtractorEnabled,
+  ...(runtimeExtractorModelId ? { extractorModelId: runtimeExtractorModelId } : {}),
+  extractorTriggerEvery: runtimeExtractorTriggerEvery,
+  flushPendingWrites: flushPendingWritesRuntime,
+  memoryTools: runtimeMemoryTools,
+  registerCommands: registerCommandsRuntime,
+};
 
-    return { action: "continue" };
-  });
+export function createMemoryExtension(deps: MemoryExtensionDeps = runtimeDeps) {
+  return function memoryExtension(pi: ExtensionAPI) {
+    const savedSessionSignatures = new Set<string>();
+    let sessionMessageCount = 0;
 
-  pi.on("before_agent_start", async (event) => {
-    try {
-      const memories = await memoryService.findRelevantMemories(event.prompt, 3);
-      if (memories.length === 0) return;
+    pi.on("input", async (event, ctx) => {
+      if (event.source === "extension") return { action: "continue" };
 
-      const memoryLines = memories.map((memory) => `- ${memory.text}`);
-      return {
-        systemPrompt: `${event.systemPrompt}\n\nRelevant user memory:\n${memoryLines.join("\n")}`,
-      };
-    } catch {
-      return;
-    }
-  });
+      sessionMessageCount++;
+      deps.memoryService.queueAutomaticCapture(event.text, ctx);
 
-  pi.on("session_before_compact", async (_event, ctx) => {
-    await memoryService.captureSessionConversation(
-      ctx.sessionManager,
-      "before_compact",
-      savedSessionSignatures,
-      {
-        target: ctx,
-      },
-    );
-  });
-
-  pi.on("session_before_switch", async (event, ctx) => {
-    await memoryService.captureSessionConversation(
-      ctx.sessionManager,
-      `before_switch:${event.reason}`,
-      savedSessionSignatures,
-      {
-        target: ctx,
-      },
-    );
-  });
-
-  pi.on("session_shutdown", async (event, ctx) => {
-    if (event.reason !== "reload") {
-      await memoryService.captureSessionConversation(
-        ctx.sessionManager,
-        `shutdown:${event.reason}`,
-        savedSessionSignatures,
-      ).catch(() => undefined);
-
-      if (extractorEnabled) {
-        const model = extractorModelId
-          ? ctx.modelRegistry.getAll().find((m) => m.id === extractorModelId)
-          : ctx.model;
-        memoryService.queueLLMExtraction(ctx.sessionManager, model);
+      if (deps.extractorEnabled && sessionMessageCount % deps.extractorTriggerEvery === 0) {
+        const model =
+          ctx.modelRegistry.getAll().find((m) => m.id === deps.extractorModelId) ??
+          ctx.model;
+        deps.memoryService.queueLLMExtraction(ctx.sessionManager, model, ctx);
       }
 
-      memoryService.queueConsolidation();
+      return { action: "continue" };
+    });
+
+    pi.on("before_agent_start", async (event) => {
+      try {
+        const memories = await deps.memoryService.findRelevantMemories(event.prompt, 3);
+        if (memories.length === 0) return;
+
+        const memoryLines = memories.map((memory) => `- ${memory.text}`);
+        return {
+          systemPrompt: `${event.systemPrompt}\n\nRelevant user memory:\n${memoryLines.join("\n")}`,
+        };
+      } catch {
+        return;
+      }
+    });
+
+    pi.on("session_before_compact", async (_event, ctx) => {
+      await deps.memoryService.captureSessionConversation(
+        ctx.sessionManager,
+        "before_compact",
+        savedSessionSignatures,
+        {
+          target: ctx,
+        },
+      );
+    });
+
+    pi.on("session_before_switch", async (event, ctx) => {
+      await deps.memoryService.captureSessionConversation(
+        ctx.sessionManager,
+        `before_switch:${event.reason}`,
+        savedSessionSignatures,
+        {
+          target: ctx,
+        },
+      );
+    });
+
+    pi.on("session_shutdown", async (event, ctx) => {
+      if (event.reason !== "reload") {
+        await deps.memoryService.captureSessionConversation(
+          ctx.sessionManager,
+          `shutdown:${event.reason}`,
+          savedSessionSignatures,
+        ).catch(() => undefined);
+
+        if (deps.extractorEnabled) {
+          const model = deps.extractorModelId
+            ? ctx.modelRegistry.getAll().find((m) => m.id === deps.extractorModelId)
+            : ctx.model;
+          deps.memoryService.queueLLMExtraction(ctx.sessionManager, model);
+        }
+
+        deps.memoryService.queueConsolidation();
+      }
+
+      await deps.flushPendingWrites();
+    });
+
+    for (const tool of deps.memoryTools) {
+      pi.registerTool(tool);
     }
 
-    await flushPendingWrites();
-  });
-
-  for (const tool of memoryTools) {
-    pi.registerTool(tool);
-  }
-
-  registerCommands(pi);
+    deps.registerCommands(pi);
+  };
 }
+
+export default createMemoryExtension();

@@ -2,7 +2,23 @@
 node = "22"
 
 [tasks.check]
+description = "Run the TypeScript check"
+raw = true
+env = { FORCE_COLOR = "1" }
 run = "npm run check"
 
 [tasks.install]
+description = "Install dependencies"
 run = "npm install"
+
+[tasks.test]
+description = "Run the test suite"
+raw = true
+env = { FORCE_COLOR = "1" }
+run = "npm test"
+
+[tasks.precommit]
+description = "Run precommit checks"
+raw = true
+depends = ["check", "test"]
+run = "echo '✔ Precommit passed'"
