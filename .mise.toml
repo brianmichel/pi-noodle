@@ -1,0 +1,8 @@
+[tools]
+node = "22"
+
+[tasks.check]
+run = "npm run check"
+
+[tasks.install]
+run = "npm install"
