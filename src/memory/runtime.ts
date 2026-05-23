@@ -14,11 +14,11 @@ import { TursoBackend } from "./turso-backend.ts";
 //
 // Config is resolved from:
 //   1. Defaults         — local DB at ~/.pi/noodle/memories.db, OpenAI embedder
-//   2. ~/.pi/noodle/config.json  — persisted by /noodle setup
+//   2. ~/.pi/noodle/config.json  — persisted by /noodle settings
 //   3. Environment variables  — NOODLE_DB_PATH, OPENAI_API_KEY, etc.
 //
 // Use /noodle in Pi to view the current config.
-// Use /noodle setup to configure interactively.
+// Use /noodle settings to configure interactively.
 // ---------------------------------------------------------------------------
 
 function createBackend(config: NoodleConfig): MemoryBackend {
