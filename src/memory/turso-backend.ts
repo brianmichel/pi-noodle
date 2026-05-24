@@ -1,5 +1,6 @@
 import { DEFAULT_AGENT_ID } from "../constants.ts";
 import type { JsonObject } from "../types.ts";
+import { asFiniteNumber, asStringArray, isJsonObject, parseJsonObject, parseJsonStringArray } from "../utils.ts";
 import type { MemoryBackend } from "./backend.ts";
 import type { Embedder } from "./embedder.ts";
 import type {
@@ -18,29 +19,6 @@ import type {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function parseJsonString(value: unknown, fallback: JsonObject = {}): JsonObject {
-  if (typeof value !== "string") return fallback;
-  try {
-    const parsed = JSON.parse(value);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as JsonObject)
-      : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function parseJsonArray(value: unknown, fallback: string[] = []): string[] {
-  if (typeof value !== "string") return fallback;
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed)
-      ? parsed.filter((v): v is string => typeof v === "string")
-      : fallback;
-  } catch {
-    return fallback;
-  }
-}
 
 function normalizeScope(scope?: MemoryScope): MemoryScope {
   return {
@@ -102,8 +80,8 @@ function rowToRecord(row: Record<string, unknown>): MemoryRecord {
 
   const record: MemoryRecord = {
     text: typeof row.text === "string" ? row.text : "",
-    categories: parseJsonArray(row.categories),
-    metadata: parseJsonString(row.metadata),
+    categories: parseJsonStringArray(row.categories),
+    metadata: parseJsonObject(row.metadata),
     scope,
   };
 
@@ -133,6 +111,89 @@ function cosineSimilarity(a: Float32Array, b: Float32Array): number {
   }
   const denom = Math.sqrt(normA) * Math.sqrt(normB);
   return denom === 0 ? 0 : dot / denom;
+}
+
+
+function metadataMatches(recordMetadata: JsonObject, expected: JsonObject): boolean {
+  return Object.entries(expected).every(([key, value]) => {
+    const current = recordMetadata[key];
+    if (Array.isArray(value) || (value && typeof value === "object")) {
+      return JSON.stringify(current) === JSON.stringify(value);
+    }
+    return current === value;
+  });
+}
+
+function mergeJsonObjects(primary: JsonObject, secondary: JsonObject): JsonObject {
+  const merged: JsonObject = { ...secondary, ...primary };
+
+  const reasons = new Set<string>();
+  for (const value of [primary["trigger_reasons"], secondary["trigger_reasons"]]) {
+    if (!Array.isArray(value)) continue;
+    for (const item of value) {
+      if (typeof item === "string" && item.trim()) reasons.add(item);
+    }
+  }
+  if (reasons.size > 0) merged["trigger_reasons"] = Array.from(reasons);
+
+  const signalCounts = [primary["signal_count"], secondary["signal_count"]].filter((value): value is number => typeof value === "number");
+  if (signalCounts.length > 0) merged["signal_count"] = Math.max(...signalCounts);
+
+  const confidences = [primary["confidence"], secondary["confidence"]].filter((value): value is number => typeof value === "number");
+  if (confidences.length > 0) merged["confidence"] = Math.max(...confidences);
+
+  const consolidatedFrom = new Set<string>();
+  for (const value of [primary["consolidated_from"], secondary["consolidated_from"]]) {
+    if (!Array.isArray(value)) continue;
+    for (const item of value) {
+      if (typeof item === "string" && item.trim()) consolidatedFrom.add(item);
+    }
+  }
+  if (consolidatedFrom.size > 0) merged["consolidated_from"] = Array.from(consolidatedFrom);
+
+  return merged;
+}
+
+function applySearchFilters(records: Array<MemoryRecord & { _score: number }>, filters?: JsonObject): Array<MemoryRecord & { _score: number }> {
+  if (!filters) return records;
+
+  const sourceFilter = asStringArray(filters["source"]);
+  const autoSaved = typeof filters["auto_saved"] === "boolean" ? filters["auto_saved"] : undefined;
+  const createdAfter = asFiniteNumber(filters["createdAfter"]);
+  const createdBefore = asFiniteNumber(filters["createdBefore"]);
+  const lastRetrievedAfter = asFiniteNumber(filters["lastRetrievedAfter"]);
+  const lastRetrievedBefore = asFiniteNumber(filters["lastRetrievedBefore"]);
+  const minRetrievalCount = asFiniteNumber(filters["minRetrievalCount"]);
+  const maxRetrievalCount = asFiniteNumber(filters["maxRetrievalCount"]);
+  const minConfidence = asFiniteNumber(filters["minConfidence"]);
+  const metadataFilter = isJsonObject(filters["metadata"])
+    ? filters["metadata"] as JsonObject
+    : undefined;
+
+  return records.filter((record) => {
+    if (sourceFilter.length > 0) {
+      const source = typeof record.metadata.source === "string" ? record.metadata.source : undefined;
+      if (!source || !sourceFilter.includes(source)) return false;
+    }
+
+    if (autoSaved !== undefined) {
+      if (record.metadata.auto_saved !== autoSaved) return false;
+    }
+
+    if (createdAfter !== undefined && (record.createdAt ?? 0) < createdAfter) return false;
+    if (createdBefore !== undefined && (record.createdAt ?? Number.MAX_SAFE_INTEGER) > createdBefore) return false;
+    if (lastRetrievedAfter !== undefined && (record.lastRetrieved ?? 0) < lastRetrievedAfter) return false;
+    if (lastRetrievedBefore !== undefined && (record.lastRetrieved ?? Number.MAX_SAFE_INTEGER) > lastRetrievedBefore) return false;
+    if (minRetrievalCount !== undefined && (record.retrievalCount ?? 0) < minRetrievalCount) return false;
+    if (maxRetrievalCount !== undefined && (record.retrievalCount ?? 0) > maxRetrievalCount) return false;
+    if (minConfidence !== undefined) {
+      const confidence = typeof record.metadata.confidence === "number" ? record.metadata.confidence : undefined;
+      if (confidence === undefined || confidence < minConfidence) return false;
+    }
+    if (metadataFilter && !metadataMatches(record.metadata, metadataFilter)) return false;
+
+    return true;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -226,11 +287,12 @@ export class TursoBackend implements MemoryBackend {
     const scope = normalizeScope(input.scope);
     const scopeFilter = buildScopeFilter(scope);
     const limit = Math.max(1, input.limit ?? 5);
+    const candidateLimit = Math.max(limit * 5, 25);
 
     // Build parameterised async. Positional: vector JSON, then scope args, then limit.
     const args: unknown[] = [toVectorJson(queryEmbedding)];
     if (scopeFilter.args.length > 0) args.push(...scopeFilter.args);
-    args.push(limit);
+    args.push(candidateLimit);
 
     const whereClause = scopeFilter.clause
       ? ` WHERE embedding IS NOT NULL AND ${scopeFilter.clause}`
@@ -244,7 +306,7 @@ export class TursoBackend implements MemoryBackend {
     const result = await this.db.execute({
       sql: `SELECT id, text, category, categories,
                    user_id, assistant_id, session_id,
-                   metadata,
+                   metadata, created_at, last_retrieved, retrieval_count,
                    vector_distance_cos(embedding, vector32(?1)) AS distance
             FROM memories${whereClause}
             ORDER BY distance
@@ -280,12 +342,13 @@ export class TursoBackend implements MemoryBackend {
         r.categories.some((c) => catSet.has(c)),
       );
     }
+    records = applySearchFilters(records, input.filters);
 
     const finalRecords = records
       .sort((a, b) => b._score - a._score)
       .slice(0, limit);
 
-    await this.markRetrieved(finalRecords.map((record) => record.id).filter((id): id is string => typeof id === "string"));
+    await this.recordRetrievals(finalRecords.map((record) => record.id).filter((id): id is string => typeof id === "string"));
 
     return finalRecords.map(({ _score: score, ...rec }) => ({ ...rec, score }));
   }
@@ -418,8 +481,18 @@ export class TursoBackend implements MemoryBackend {
                b.id     AS id_b,
                a.text   AS text_a,
                b.text   AS text_b,
+               a.category AS category_a,
+               b.category AS category_b,
+               a.categories AS categories_a,
+               b.categories AS categories_b,
+               a.metadata AS metadata_a,
+               b.metadata AS metadata_b,
                a.created_at AS created_a,
                b.created_at AS created_b,
+               a.last_retrieved AS last_retrieved_a,
+               b.last_retrieved AS last_retrieved_b,
+               a.retrieval_count AS retrieval_count_a,
+               b.retrieval_count AS retrieval_count_b,
                vector_distance_cos(a.embedding, b.embedding) AS dist
         FROM (SELECT * FROM memories ORDER BY created_at DESC LIMIT 500) a
         JOIN (SELECT * FROM memories ORDER BY created_at DESC LIMIT 500) b
@@ -438,12 +511,68 @@ export class TursoBackend implements MemoryBackend {
         const idB = raw.id_b as string;
         if (toDelete.has(idA) || toDelete.has(idB)) continue;
 
-        // Keep the newer memory; soft-delete the older one by marking metadata
+        const retrievalA = typeof raw.retrieval_count_a === "number" ? raw.retrieval_count_a : 0;
+        const retrievalB = typeof raw.retrieval_count_b === "number" ? raw.retrieval_count_b : 0;
         const createdA = raw.created_a as number;
         const createdB = raw.created_b as number;
-        const [keepId, dropId] = createdA >= createdB ? [idA, idB] : [idB, idA];
 
-        // Mark the dropped record as consolidated before removing it
+        const keepA = retrievalA > retrievalB || (retrievalA === retrievalB && createdA >= createdB);
+        const keepId = keepA ? idA : idB;
+        const dropId = keepA ? idB : idA;
+        const keepCategory = keepA ? raw.category_a : raw.category_b;
+        const keepCategories = keepA ? raw.categories_a : raw.categories_b;
+        const keepMetadata = keepA ? raw.metadata_a : raw.metadata_b;
+        const keepLastRetrieved = keepA ? raw.last_retrieved_a : raw.last_retrieved_b;
+        const keepRetrievalCount = keepA ? retrievalA : retrievalB;
+        const dropText = keepA ? raw.text_b : raw.text_a;
+        const dropCategory = keepA ? raw.category_b : raw.category_a;
+        const dropCategories = keepA ? raw.categories_b : raw.categories_a;
+        const dropMetadata = keepA ? raw.metadata_b : raw.metadata_a;
+        const dropLastRetrieved = keepA ? raw.last_retrieved_b : raw.last_retrieved_a;
+        const dropRetrievalCount = keepA ? retrievalB : retrievalA;
+
+        const mergedCategories = Array.from(new Set([
+          ...parseJsonStringArray(keepCategories),
+          ...parseJsonStringArray(dropCategories),
+          ...(typeof keepCategory === "string" && keepCategory.length > 0 ? [keepCategory] : []),
+          ...(typeof dropCategory === "string" && dropCategory.length > 0 ? [dropCategory] : []),
+        ]));
+
+        const mergedMetadata = {
+          ...mergeJsonObjects(
+            parseJsonObject(keepMetadata),
+            {
+              ...parseJsonObject(dropMetadata),
+              consolidated_into: keepId,
+              consolidated_from: [dropId, dropText],
+            },
+          ),
+          source: "consolidated",
+        };
+
+        await this.db.execute({
+          sql: `UPDATE memories
+                SET category = ?,
+                    categories = ?,
+                    metadata = ?,
+                    retrieval_count = ?,
+                    last_retrieved = ?
+                WHERE id = ?`,
+          args: [
+            typeof keepCategory === "string" && keepCategory.length > 0
+              ? keepCategory
+              : (typeof dropCategory === "string" && dropCategory.length > 0 ? dropCategory : null),
+            JSON.stringify(mergedCategories),
+            JSON.stringify(mergedMetadata),
+            keepRetrievalCount + dropRetrievalCount,
+            Math.max(
+              typeof keepLastRetrieved === "number" ? keepLastRetrieved : 0,
+              typeof dropLastRetrieved === "number" ? dropLastRetrieved : 0,
+            ) || null,
+            keepId,
+          ],
+        });
+
         await this.db.execute({
           sql: `UPDATE memories
                 SET metadata = json_patch(metadata, ?)
@@ -452,6 +581,7 @@ export class TursoBackend implements MemoryBackend {
         });
 
         toDelete.add(dropId);
+        report.merged++;
         report.deleted++;
       }
 
@@ -470,20 +600,6 @@ export class TursoBackend implements MemoryBackend {
   }
 
   // ---- internals --------------------------------------------------------
-
-  private async markRetrieved(ids: string[]): Promise<void> {
-    if (ids.length === 0) return;
-
-    const now = Date.now();
-    for (const id of ids) {
-      await this.db.execute({
-        sql: `UPDATE memories
-              SET last_retrieved = ?, retrieval_count = COALESCE(retrieval_count, 0) + 1
-              WHERE id = ?`,
-        args: [now, id],
-      });
-    }
-  }
 
   /** Read stored embedding as Float32Array. Returns null on missing row. */
   private async readEmbedding(id: string): Promise<Float32Array | null> {

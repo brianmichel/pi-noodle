@@ -37,58 +37,49 @@ export class MemoryService {
     this.backend = backend;
   }
 
-  async add(input: AddMemoryInput): Promise<void> {
-    await this.backend.add({
+  add(input: AddMemoryInput): Promise<void> {
+    return this.backend.add({
       ...input,
       messages: ensureMessages(input.text, input.messages),
       scope: this.withDefaultScope(input.scope),
     });
   }
 
-  async search(input: MemorySearchInput): Promise<MemoryRecord[]> {
+  search(input: MemorySearchInput): Promise<MemoryRecord[]> {
     return this.backend.search({
       ...input,
       scope: this.withDefaultScope(input.scope),
     });
   }
 
-  async list(scope?: MemoryScope): Promise<MemoryRecord[]> {
+  list(scope?: MemoryScope): Promise<MemoryRecord[]> {
     return this.backend.list({
       scope: this.withDefaultScope(scope),
     });
   }
 
-  async get(id: string): Promise<MemoryRecord | null> {
+  get(id: string): Promise<MemoryRecord | null> {
     return this.backend.get(id);
   }
 
-  async update(id: string, input: UpdateMemoryInput): Promise<void> {
-    await this.backend.update(id, input);
+  update(id: string, input: UpdateMemoryInput): Promise<void> {
+    return this.backend.update(id, input);
   }
 
-  async delete(id: string): Promise<void> {
-    await this.backend.delete(id);
+  delete(id: string): Promise<void> {
+    return this.backend.delete(id);
   }
 
-  async findRelevantMemories(prompt: string, limit = 3): Promise<MemoryRecord[]> {
-    if (!shouldRetrieveMemories(prompt)) return [];
+  findRelevantMemories(prompt: string, limit = 3): Promise<MemoryRecord[]> {
+    if (!shouldRetrieveMemories(prompt)) return Promise.resolve([]);
 
-    const results = await this.backend.search({
+    return this.backend.search({
       query: prompt,
       limit,
       threshold: 0.35,
       categories: categoriesForPrompt(prompt),
       scope: this.withDefaultScope(),
     });
-
-    const ids = results
-      .map((record) => record.id)
-      .filter((id): id is string => typeof id === "string" && id.length > 0);
-    if (ids.length > 0) {
-      await this.backend.recordRetrievals?.(ids);
-    }
-
-    return results;
   }
 
   queueAutomaticCapture(text: string, target?: NotificationTarget): boolean {
@@ -238,10 +229,18 @@ export class MemoryService {
   async addCandidateIfNovel(text: string, normalized: string, metadata: JsonObject): Promise<"saved" | "skipped"> {
     const existing = await this.list();
     const normalizedValue = normalized.trim().toLowerCase();
-    if (existing.some((memory) => {
+    const duplicate = existing.find((memory) => {
       const current = memory.text.trim().toLowerCase();
       return current === normalizedValue || current.includes(normalizedValue) || normalizedValue.includes(current);
-    })) {
+    });
+
+    if (duplicate?.id) {
+      await this.update(duplicate.id, {
+        metadata: mergeMemoryMetadata(duplicate.metadata, metadata),
+      });
+      return "skipped";
+    }
+    if (duplicate) {
       return "skipped";
     }
 
@@ -266,4 +265,37 @@ export class MemoryService {
       ...(scope?.sessionId ? { sessionId: scope.sessionId } : {}),
     };
   }
+}
+
+function mergeMemoryMetadata(existing: JsonObject, incoming: JsonObject): JsonObject {
+  const merged: JsonObject = {
+    ...existing,
+    ...incoming,
+  };
+
+  const triggerReasons = new Set<string>();
+  const addReasons = (value: unknown) => {
+    if (!Array.isArray(value)) return;
+    for (const item of value) {
+      if (typeof item === "string" && item.trim()) triggerReasons.add(item);
+    }
+  };
+  addReasons(existing["trigger_reasons"]);
+  addReasons(incoming["trigger_reasons"]);
+  if (triggerReasons.size > 0) merged["trigger_reasons"] = Array.from(triggerReasons);
+
+  const existingSignal = typeof existing["signal_count"] === "number" ? existing["signal_count"] : 0;
+  const incomingSignal = typeof incoming["signal_count"] === "number" ? incoming["signal_count"] : 0;
+  if (existingSignal || incomingSignal) {
+    merged["signal_count"] = Math.max(existingSignal, incomingSignal);
+  }
+
+  const existingConfidence = typeof existing["confidence"] === "number" ? existing["confidence"] : undefined;
+  const incomingConfidence = typeof incoming["confidence"] === "number" ? incoming["confidence"] : undefined;
+  if (existingConfidence !== undefined || incomingConfidence !== undefined) {
+    merged["confidence"] = Math.max(existingConfidence ?? 0, incomingConfidence ?? 0);
+  }
+
+  merged["last_seen_at"] = Date.now();
+  return merged;
 }

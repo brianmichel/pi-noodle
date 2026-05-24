@@ -73,12 +73,17 @@ test("MemoryService dedupes novel candidates before writing", async () => {
       id: "1",
       text: "Call user small dog",
       categories: ["identity"],
-      metadata: {},
+      metadata: { confidence: 0.5, trigger_reasons: ["first_pass"] },
       category: "identity",
     },
   ];
 
-  const skipped = await service.addCandidateIfNovel("Call user small dog", "call user small dog", { category: "identity" });
+  const skipped = await service.addCandidateIfNovel("Call user small dog", "call user small dog", {
+    category: "identity",
+    confidence: 0.9,
+    signal_count: 3,
+    trigger_reasons: ["repeat_signal"],
+  });
   const saved = await service.addCandidateIfNovel("User prefers concise responses", "user prefers concise responses", {
     category: "response_style",
     categories: ["response_style"],
@@ -88,6 +93,11 @@ test("MemoryService dedupes novel candidates before writing", async () => {
   assert.equal(saved, "saved");
   assert.equal(backend.added.length, 1);
   assert.equal(backend.added[0]?.text, "User prefers concise responses");
+  assert.equal(backend.updated.length, 1);
+  assert.deepEqual(backend.updated[0]?.id, "1");
+  assert.equal(backend.updated[0]?.input.metadata?.["confidence"], 0.9);
+  assert.equal(backend.updated[0]?.input.metadata?.["signal_count"], 3);
+  assert.deepEqual(backend.updated[0]?.input.metadata?.["trigger_reasons"], ["first_pass", "repeat_signal"]);
 });
 
 test("MemoryService retrieval ranks relevant memories and skips chatter", async () => {
@@ -116,11 +126,7 @@ test("MemoryService retrieval ranks relevant memories and skips chatter", async 
   assert.equal(coding.length > 0, true);
   assert.equal(coding[0]?.text, "Default to Elixir");
   assert.deepEqual(chatter, []);
-  assert.equal(backend.recordedRetrievals.length, 1);
-  assert.deepEqual(
-    backend.recordedRetrievals[0],
-    coding.map((record) => record.id).filter((id): id is string => typeof id === "string"),
-  );
+  assert.equal(backend.recordedRetrievals.length, 0);
 });
 
 test("MemoryService automatic capture promotes repeated candidates", async () => {

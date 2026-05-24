@@ -70,7 +70,7 @@ export const memorySearchTool = defineTool({
     scope: Type.Optional(scopeSchema),
     limit: Type.Optional(Type.Number({ description: "Maximum number of results." })),
     threshold: Type.Optional(Type.Number({ description: "Optional backend similarity threshold." })),
-    filters: Type.Optional(Type.Object({}, { additionalProperties: true, description: "Backend-specific filters." })),
+    filters: Type.Optional(Type.Object({}, { additionalProperties: true, description: "Backend-specific filters such as source, auto_saved, createdAfter, createdBefore, minRetrievalCount, maxRetrievalCount, minConfidence, metadata." })),
   }),
   async execute(_toolCallId, params) {
     const result = await memoryService.search({

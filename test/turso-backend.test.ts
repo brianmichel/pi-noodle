@@ -193,6 +193,45 @@ describe("TursoBackend", () => {
     }
   });
 
+  it("applies backend search filters for metadata, timestamps, and retrieval counts", async () => {
+    await backend.add({
+      text: "Auto-saved TypeScript preference",
+      categories: ["coding_pref"],
+      metadata: { source: "heuristic", auto_saved: true, confidence: 0.91, tag: "keep" },
+      scope: { assistantId: "agent-filters" },
+    });
+    await backend.add({
+      text: "Manual TypeScript preference",
+      categories: ["coding_pref"],
+      metadata: { source: "manual_command", auto_saved: false, confidence: 0.4, tag: "drop" },
+      scope: { assistantId: "agent-filters" },
+    });
+
+    const seeded = await backend.list({ scope: { assistantId: "agent-filters" } });
+    const auto = seeded.find((m) => m.text === "Auto-saved TypeScript preference");
+    const manual = seeded.find((m) => m.text === "Manual TypeScript preference");
+    assert.ok(auto?.id && manual?.id);
+
+    await backend.recordRetrievals([auto!.id!, auto!.id!]);
+
+    const filtered = await backend.search({
+      query: "TypeScript preference",
+      scope: { assistantId: "agent-filters" },
+      limit: 10,
+      filters: {
+        source: ["heuristic"],
+        auto_saved: true,
+        minConfidence: 0.8,
+        minRetrievalCount: 2,
+        metadata: { tag: "keep" },
+        createdAfter: Math.max(0, (auto?.createdAt ?? 0) - 1),
+      },
+    });
+
+    assert.ok(filtered.some((m) => m.id === auto!.id));
+    assert.ok(filtered.every((m) => m.id !== manual!.id));
+  });
+
   it("scopes lists by assistantId", async () => {
     await backend.add({
       text: "Memory for agent-1",
@@ -328,5 +367,53 @@ describe("TursoBackend", () => {
     const row = result.rows[0] as { retrieval_count: number; last_retrieved: number };
     assert.equal(row.retrieval_count, 2);
     assert.ok(row.last_retrieved);
+  });
+
+  it("consolidates duplicate memories by merging metadata, categories, and retrieval stats", async () => {
+    const isolateDb = createClient({ url: ":memory:" });
+    const isolateBackend = new TursoBackend(isolateDb, fakeEmbedder);
+    const scope = { assistantId: "agent-consolidate", userId: "user-consolidate" };
+
+    try {
+      await isolateBackend.add({
+        text: "Default to TypeScript",
+        category: "coding_pref",
+        categories: ["coding_pref"],
+        metadata: { source: "heuristic", confidence: 0.7, trigger_reasons: ["stated_preference"] },
+        scope,
+      });
+      await isolateBackend.add({
+        text: "Default to TypeScript",
+        category: "project",
+        categories: ["project"],
+        metadata: { source: "llm_extracted", confidence: 0.95, trigger_reasons: ["repeated_pattern"] },
+        scope,
+      });
+
+      const before = (await isolateBackend.list({ scope }))
+        .filter((record) => record.text === "Default to TypeScript");
+      const ids = before.map((record) => record.id!).filter(Boolean);
+      assert.equal(ids.length, 2);
+
+      await isolateBackend.recordRetrievals([ids[0]!, ids[0]!, ids[1]!]);
+
+      const report = await isolateBackend.consolidate();
+      assert.equal(report.merged, 1);
+      assert.equal(report.deleted, 1);
+
+      const after = (await isolateBackend.list({ scope }))
+        .filter((record) => record.text === "Default to TypeScript");
+      assert.equal(after.length, 1);
+      const merged = after[0]!;
+      assert.ok(merged.categories.includes("coding_pref"));
+      assert.ok(merged.categories.includes("project"));
+      assert.equal(merged.retrievalCount, 3);
+      assert.equal(merged.metadata["source"], "consolidated");
+      assert.equal(merged.metadata["confidence"], 0.95);
+      assert.deepEqual([...(merged.metadata["trigger_reasons"] as string[])].sort(), ["repeated_pattern", "stated_preference"]);
+      assert.ok(Array.isArray(merged.metadata["consolidated_from"]));
+    } finally {
+      isolateDb.close();
+    }
   });
 });
