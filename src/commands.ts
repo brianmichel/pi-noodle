@@ -147,7 +147,7 @@ export function registerCommands(pi: ExtensionAPI): void {
         ctx.ui.notify(`Auth token: ${maskSecret(config.db.authToken)}`, "info");
       }
       ctx.ui.notify(
-        `Embedding: ${config.embedding.provider}  ${config.embedding.model}`,
+        `Embedding: ${config.embedding.provider}  ${config.embedding.model}${config.embedding.dimensions ? `  ${config.embedding.dimensions}d` : ""}`,
         "info",
       );
       ctx.ui.notify(`Endpoint: ${config.embedding.baseUrl}`, "info");

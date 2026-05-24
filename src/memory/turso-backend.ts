@@ -211,23 +211,32 @@ export class TursoBackend implements MemoryBackend {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private readonly db: any; // @libsql/client Client
   private readonly embedder: Embedder;
+  private readonly embeddingSignature: string;
   private initialized = false;
+  private resolvedDimensions?: number;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  constructor(db: any, embedder: Embedder) {
+  constructor(db: any, embedder: Embedder, options?: { provider?: string; model?: string; baseUrl?: string }) {
     this.db = db;
     this.embedder = embedder;
+    this.embeddingSignature = JSON.stringify({
+      provider: options?.provider ?? "unknown",
+      model: options?.model ?? "",
+      baseUrl: options?.baseUrl ?? "",
+    });
   }
 
   // ---- schema ----
 
-  private async ensureSchema(): Promise<void> {
+  private async ensureSchema(observedDimensions?: number): Promise<void> {
     if (this.initialized) return;
+
+    const dimensions = this.resolveDimensions(observedDimensions);
     await this.db.executeMultiple(`
       CREATE TABLE IF NOT EXISTS memories (
         id               TEXT PRIMARY KEY,
         text             TEXT NOT NULL,
-        embedding        F32_BLOB(${this.embedder.dimensions}),
+        embedding        F32_BLOB(${dimensions}),
         category         TEXT,
         categories       TEXT DEFAULT '[]',
         user_id          TEXT,
@@ -240,7 +249,13 @@ export class TursoBackend implements MemoryBackend {
       );
       CREATE INDEX IF NOT EXISTS idx_memories_scope
         ON memories(assistant_id, user_id);
+      CREATE TABLE IF NOT EXISTS noodle_meta (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
     `);
+
+    await this.assertEmbeddingCompatibility(dimensions);
     this.initialized = true;
   }
 
@@ -249,10 +264,9 @@ export class TursoBackend implements MemoryBackend {
   // ===================================================================
 
   async add(input: AddMemoryInput): Promise<void> {
-    await this.ensureSchema();
-
     const text = extractText(input);
-    const embedding = await this.embedder.embed(text);
+    const embedding = await this.embedChecked(text);
+    await this.ensureSchema(embedding.length);
     const scope = normalizeScope(input.scope);
 
     const categories = [
@@ -281,9 +295,8 @@ export class TursoBackend implements MemoryBackend {
   }
 
   async search(input: MemorySearchInput): Promise<MemoryRecord[]> {
-    await this.ensureSchema();
-
-    const queryEmbedding = await this.embedder.embed(input.query);
+    const queryEmbedding = await this.embedChecked(input.query);
+    await this.ensureSchema(queryEmbedding.length);
     const scope = normalizeScope(input.scope);
     const scopeFilter = buildScopeFilter(scope);
     const limit = Math.max(1, input.limit ?? 5);
@@ -405,7 +418,13 @@ export class TursoBackend implements MemoryBackend {
   }
 
   async update(id: string, input: UpdateMemoryInput): Promise<void> {
-    await this.ensureSchema();
+    let nextEmbedding: Float32Array | undefined;
+    if (input.text !== undefined) {
+      nextEmbedding = await this.embedChecked(input.text);
+      await this.ensureSchema(nextEmbedding.length);
+    } else {
+      await this.ensureSchema();
+    }
 
     if (!input.text && !input.metadata) {
       throw new Error("Provide text or metadata for the update.");
@@ -418,7 +437,7 @@ export class TursoBackend implements MemoryBackend {
       sets.push("text = ?");
       sets.push("embedding = vector32(?)");
       args.push(input.text);
-      args.push(toVectorJson(await this.embedder.embed(input.text)));
+      args.push(toVectorJson(nextEmbedding!));
     }
 
     if (input.metadata !== undefined) {
@@ -443,10 +462,9 @@ export class TursoBackend implements MemoryBackend {
   }
 
   async captureConversation(input: ConversationCaptureInput): Promise<void> {
-    await this.ensureSchema();
-
     const text = extractText(input);
-    const embedding = await this.embedder.embed(text);
+    const embedding = await this.embedChecked(text);
+    await this.ensureSchema(embedding.length);
     const scope = normalizeScope(input.scope);
 
     await this.db.execute({
@@ -600,6 +618,72 @@ export class TursoBackend implements MemoryBackend {
   }
 
   // ---- internals --------------------------------------------------------
+
+  private resolveDimensions(observedDimensions?: number): number {
+    const configured = this.embedder.dimensions;
+    const resolved = observedDimensions ?? configured ?? this.resolvedDimensions;
+
+    if (!resolved || !Number.isFinite(resolved) || resolved < 1) {
+      throw new Error(
+        "Embedding dimensions are unknown for the configured provider/model. Set noodle embedding.dimensions in config.json or EMBEDDING_DIMENSIONS in the environment.",
+      );
+    }
+    if (configured && observedDimensions && configured !== observedDimensions) {
+      throw new Error(
+        `Embedding dimension mismatch: config/provider expected ${configured}, but the provider returned ${observedDimensions}. Update noodle embedding.dimensions or switch to a matching model/provider.`,
+      );
+    }
+
+    this.resolvedDimensions = resolved;
+    return resolved;
+  }
+
+  private async assertEmbeddingCompatibility(dimensions: number): Promise<void> {
+    const existingDimensions = await this.readMeta("embedding_dimensions");
+    const existingSignature = await this.readMeta("embedding_signature");
+
+    if (existingDimensions && parseInt(existingDimensions, 10) !== dimensions) {
+      throw new Error(
+        `Noodle DB was created with embedding dimension ${existingDimensions}, but the current provider/model uses ${dimensions}. Use a fresh DB or switch back to the original embedding configuration.`,
+      );
+    }
+    if (existingSignature && existingSignature !== this.embeddingSignature) {
+      throw new Error(
+        "Noodle DB was created with a different embedding provider/model/base URL. Use a fresh DB or switch back to the original embedding configuration to avoid mixed-vector search corruption.",
+      );
+    }
+
+    if (!existingDimensions) {
+      await this.writeMeta("embedding_dimensions", String(dimensions));
+    }
+    if (!existingSignature) {
+      await this.writeMeta("embedding_signature", this.embeddingSignature);
+    }
+  }
+
+  private async readMeta(key: string): Promise<string | null> {
+    const result = await this.db.execute({
+      sql: "SELECT value FROM noodle_meta WHERE key = ?",
+      args: [key],
+    });
+    if (result.rows.length === 0) return null;
+    const value = (result.rows[0] as Record<string, unknown>).value;
+    return typeof value === "string" ? value : null;
+  }
+
+  private async writeMeta(key: string, value: string): Promise<void> {
+    await this.db.execute({
+      sql: `INSERT INTO noodle_meta(key, value) VALUES(?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      args: [key, value],
+    });
+  }
+
+  private async embedChecked(text: string): Promise<Float32Array> {
+    const embedding = await this.embedder.embed(text);
+    this.resolveDimensions(embedding.length);
+    return embedding;
+  }
 
   /** Read stored embedding as Float32Array. Returns null on missing row. */
   private async readEmbedding(id: string): Promise<Float32Array | null> {

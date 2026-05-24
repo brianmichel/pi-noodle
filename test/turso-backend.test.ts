@@ -347,6 +347,29 @@ describe("TursoBackend", () => {
     );
   });
 
+  it("rejects embedding dimension drift across providers or model config", async () => {
+    const db2 = createClient({ url: ":memory:" });
+    try {
+      const backendA = new TursoBackend(db2, {
+        dimensions: 8,
+        embed: async () => new Float32Array(8).fill(1),
+      }, { provider: "openai", model: "model-a", baseUrl: "https://example.test/v1" });
+      await backendA.add({ text: "seed memory", scope: { assistantId: "agent-drift" } });
+
+      const backendB = new TursoBackend(db2, {
+        dimensions: 16,
+        embed: async () => new Float32Array(16).fill(1),
+      }, { provider: "openai", model: "model-b", baseUrl: "https://example.test/v1" });
+
+      await assert.rejects(
+        () => backendB.search({ query: "seed", scope: { assistantId: "agent-drift" }, limit: 5 }),
+        /different embedding provider\/model\/base URL|embedding dimension/i,
+      );
+    } finally {
+      db2.close();
+    }
+  });
+
   it("increments retrieval_count and last_retrieved", async () => {
     await backend.add({
       text: "Retrieval counter test memory",

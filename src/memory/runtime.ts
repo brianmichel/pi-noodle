@@ -37,6 +37,7 @@ function createBackend(config: NoodleConfig): MemoryBackend {
     apiKey: config.embedding.apiKey,
     baseUrl: config.embedding.baseUrl,
     ...(config.embedding.model ? { model: config.embedding.model } : {}),
+    ...(config.embedding.dimensions ? { dimensions: config.embedding.dimensions } : {}),
   });
 
   const dbOptions: Record<string, unknown> = { url: dbUrl };
@@ -46,7 +47,11 @@ function createBackend(config: NoodleConfig): MemoryBackend {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = createClient(dbOptions as any);
-  return new TursoBackend(db, embedder);
+  return new TursoBackend(db, embedder, {
+    provider: config.embedding.provider,
+    model: config.embedding.model,
+    baseUrl: config.embedding.baseUrl,
+  });
 }
 
 const config = resolveConfig();

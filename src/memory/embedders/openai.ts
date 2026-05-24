@@ -4,6 +4,7 @@ export type OpenAIEmbedderOptions = {
   apiKey: string;
   model?: string;
   baseUrl?: string;
+  dimensions?: number;
 };
 
 /**
@@ -17,10 +18,15 @@ export function createOpenAIEmbedder(options: OpenAIEmbedderOptions): Embedder {
     /\/$/,
     "",
   );
-  const dimensions = model === "text-embedding-3-small" ? 1536 : 3072;
+  const knownDimensions: Record<string, number> = {
+    "text-embedding-3-small": 1536,
+    "text-embedding-3-large": 3072,
+    "text-embedding-ada-002": 1536,
+  };
+  const expectedDimensions = options.dimensions ?? knownDimensions[model];
 
   return {
-    dimensions,
+    ...(expectedDimensions ? { dimensions: expectedDimensions } : {}),
     embed: async (text: string): Promise<Float32Array> => {
       const response = await fetch(`${baseUrl}/embeddings`, {
         method: "POST",
@@ -47,7 +53,14 @@ export function createOpenAIEmbedder(options: OpenAIEmbedderOptions): Embedder {
         throw new Error("OpenAI returned no embeddings");
       }
 
-      return new Float32Array(embedding.embedding);
+      const vector = new Float32Array(embedding.embedding);
+      if (expectedDimensions && vector.length !== expectedDimensions) {
+        throw new Error(
+          `Embedding dimension mismatch for model ${model}: expected ${expectedDimensions}, got ${vector.length}. Update noodle embedding.dimensions or switch to a matching model/provider.`,
+        );
+      }
+
+      return vector;
     },
   };
 }

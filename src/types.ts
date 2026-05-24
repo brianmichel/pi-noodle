@@ -32,6 +32,8 @@ export type NoodleConfig = {
     baseUrl: string;
     /** Model name */
     model: string;
+    /** Optional explicit embedding dimension override for custom/nonstandard providers. */
+    dimensions?: number;
   };
   extractor?: NoodleExtractorConfig;
 };

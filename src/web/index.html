@@ -472,6 +472,25 @@
         outline: none;
         border-color: var(--accent);
       }
+      .topbar-btn {
+        height: 30px;
+        padding: 0 10px;
+        border: 1px solid var(--border);
+        background: var(--bg);
+        color: var(--text-secondary);
+        font: inherit;
+        font-family:
+          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        cursor: pointer;
+      }
+      .topbar-btn:hover {
+        color: var(--text);
+        border-color: var(--border-strong);
+        background: var(--surface-hover);
+      }
 
       /* Filter bar */
       .filter-bar {
@@ -1148,6 +1167,7 @@
             />
             <span class="kbd">/</span>
           </div>
+          <button type="button" id="review-auto-saved" class="topbar-btn">Review auto-saved</button>
           <select id="sort" class="sort-select" aria-label="Sort">
             <option value="recent">Newest</option>
             <option value="oldest">Oldest</option>
@@ -1690,6 +1710,10 @@
                 <div>
                   <div class="detail-section-title">Content</div>
                   <div class="detail-text">${escapeHtml(m.text)}</div>
+                  <div style="display:flex;gap:8px;margin-bottom:18px">
+                    <button type="button" class="topbar-btn" data-edit-memory="${escapeHtml(m.id)}">Edit</button>
+                    <button type="button" class="topbar-btn" data-delete-memory="${escapeHtml(m.id)}">Delete</button>
+                  </div>
                   <div class="detail-section-title">Categories</div>
                   <div class="detail-categories">${tags}</div>
                   ${json}
@@ -1850,10 +1874,56 @@
         renderMemories();
       }
 
-      document.getElementById("memories").addEventListener("click", (e) => {
+      async function updateMemory(id, text) {
+        const res = await fetch(`/api/memories/${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+        });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
+      }
+
+      async function deleteMemory(id) {
+        const res = await fetch(`/api/memories/${encodeURIComponent(id)}`, { method: "DELETE" });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
+      }
+
+      document.getElementById("memories").addEventListener("click", async (e) => {
         const toggle = e.target.closest("[data-toggle]");
         if (toggle) {
           toggleExpanded(toggle.getAttribute("data-toggle"));
+          return;
+        }
+        const editBtn = e.target.closest("[data-edit-memory]");
+        if (editBtn) {
+          const id = editBtn.getAttribute("data-edit-memory");
+          const memory = state.memories.find((m) => m.id === id);
+          if (!memory) return;
+          const next = window.prompt("Edit memory", memory.text);
+          if (next === null) return;
+          const trimmed = next.trim();
+          if (!trimmed || trimmed === memory.text) return;
+          try {
+            await updateMemory(id, trimmed);
+            await load();
+          } catch (err) {
+            window.alert(`Failed to update memory: ${err.message || err}`);
+          }
+          return;
+        }
+        const deleteBtn = e.target.closest("[data-delete-memory]");
+        if (deleteBtn) {
+          const id = deleteBtn.getAttribute("data-delete-memory");
+          const memory = state.memories.find((m) => m.id === id);
+          if (!memory) return;
+          if (!window.confirm(`Delete this memory?\n\n${memory.text}`)) return;
+          try {
+            await deleteMemory(id);
+            state.expanded.delete(id);
+            await load();
+          } catch (err) {
+            window.alert(`Failed to delete memory: ${err.message || err}`);
+          }
           return;
         }
         // Click anywhere on the row (not on inner buttons) to expand
@@ -1877,6 +1947,14 @@
           copy.textContent = "copied";
           setTimeout(() => (copy.textContent = orig), 1000);
         }
+      });
+
+      document.getElementById("review-auto-saved").addEventListener("click", () => {
+        state.selected.sources = new Set(["heuristic", "repetition", "llm_extracted"]);
+        state.sort = "recent";
+        document.getElementById("sort").value = "recent";
+        setView("memories");
+        renderFacets();
       });
 
       load();

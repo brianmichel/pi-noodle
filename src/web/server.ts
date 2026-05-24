@@ -1,10 +1,10 @@
-import type { Client } from "@libsql/client";
 import { readFileSync, watch } from "node:fs";
 import { dirname, join } from "node:path";
 import { spawn } from "node:child_process";
 import { platform } from "node:process";
 import { fileURLToPath } from "node:url";
 import type { ServerWebSocket } from "bun";
+import type { MemoryRecord } from "../memory/types.ts";
 
 const WEB_DIR = dirname(fileURLToPath(import.meta.url));
 const HTML_PATH = join(WEB_DIR, "index.html");
@@ -19,7 +19,11 @@ export type MemoryExplorerOptions = {
 };
 
 export function startMemoryExplorer(
-  db: Client,
+  service: {
+    list: () => Promise<MemoryRecord[]>;
+    update: (id: string, input: { text?: string; metadata?: Record<string, unknown> }) => Promise<void>;
+    delete: (id: string) => Promise<void>;
+  },
   port = 3000,
   options: MemoryExplorerOptions = {},
 ): ReturnType<typeof Bun.serve> {
@@ -90,28 +94,51 @@ export function startMemoryExplorer(
 
   const server = Bun.serve({
     port,
-    routes: {
-      "/": () =>
-        new Response(html, {
+    fetch: async (req, server) => {
+      const url = new URL(req.url);
+      if (server.upgrade(req)) return;
+
+      if (url.pathname === "/") {
+        return new Response(html, {
           headers: {
             "Content-Type": "text/html",
             ...(dev ? { "Cache-Control": "no-store" } : {}),
           },
-        }),
-      "/api/memories": async () => {
+        });
+      }
+
+      if (url.pathname === "/api/memories" && req.method === "GET") {
         try {
-          const result = await db.execute(`
-            SELECT id, text, category, categories, user_id, assistant_id, session_id,
-                   metadata, created_at, retrieval_count, last_retrieved
-            FROM memories
-            ORDER BY created_at DESC
-          `);
-          const memories = result.rows.map(rowToMemory);
+          const memories = (await service.list()).map(memoryToApi);
           return Response.json(memories);
         } catch (err) {
           return Response.json({ error: String(err) }, { status: 500 });
         }
-      },
+      }
+
+      const match = url.pathname.match(/^\/api\/memories\/([^/]+)$/);
+      if (match && req.method === "PATCH") {
+        try {
+          const body = await req.json().catch(() => ({}));
+          const text = typeof body?.text === "string" ? body.text.trim() : undefined;
+          if (!text) return Response.json({ error: "text is required" }, { status: 400 });
+          await service.update(decodeURIComponent(match[1] ?? ""), { text });
+          return Response.json({ updated: true });
+        } catch (err) {
+          return Response.json({ error: String(err) }, { status: 500 });
+        }
+      }
+
+      if (match && req.method === "DELETE") {
+        try {
+          await service.delete(decodeURIComponent(match[1] ?? ""));
+          return Response.json({ deleted: true });
+        } catch (err) {
+          return Response.json({ error: String(err) }, { status: 500 });
+        }
+      }
+
+      return new Response("Not found", { status: 404 });
     },
     websocket: {
       open(ws) {
@@ -170,47 +197,16 @@ export function startMemoryExplorer(
   return server;
 }
 
-function rowToMemory(row: any): any {
+function memoryToApi(memory: MemoryRecord): Record<string, unknown> {
   return {
-    id: row.id,
-    text: row.text,
-    category: row.category,
-    categories: asStringArray(safeJsonArray(row.categories)),
-    scope: {
-      userId: row.user_id,
-      assistantId: row.assistant_id,
-      sessionId: row.session_id,
-    },
-    metadata: safeJsonObject(row.metadata),
-    createdAt: row.created_at,
-    retrievalCount: row.retrieval_count ?? 0,
-    lastRetrieved: row.last_retrieved ?? null,
+    id: memory.id,
+    text: memory.text,
+    category: memory.category,
+    categories: memory.categories,
+    scope: memory.scope ?? {},
+    metadata: memory.metadata,
+    createdAt: memory.createdAt ?? null,
+    retrievalCount: memory.retrievalCount ?? 0,
+    lastRetrieved: memory.lastRetrieved ?? null,
   };
-}
-
-function safeJsonObject(value: unknown): Record<string, unknown> {
-  if (typeof value !== "string") return {};
-  try {
-    const parsed = JSON.parse(value);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : {};
-  } catch {
-    return {};
-  }
-}
-
-function safeJsonArray(value: unknown): unknown {
-  if (typeof value !== "string") return [];
-  try {
-    return JSON.parse(value);
-  } catch {
-    return [];
-  }
-}
-
-function asStringArray(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((v): v is string => typeof v === "string")
-    : [];
 }

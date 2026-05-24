@@ -58,6 +58,10 @@ export function resolveConfig(): NoodleConfig {
   if (env["OPENAI_API_KEY"]) config.embedding.apiKey = env["OPENAI_API_KEY"];
   if (env["EMBEDDING_BASE_URL"]) config.embedding.baseUrl = env["EMBEDDING_BASE_URL"];
   if (env["EMBEDDING_MODEL"]) config.embedding.model = env["EMBEDDING_MODEL"];
+  if (env["EMBEDDING_DIMENSIONS"]) {
+    const n = parseInt(env["EMBEDDING_DIMENSIONS"], 10);
+    if (!isNaN(n) && n > 0) config.embedding.dimensions = n;
+  }
 
   // Extractor env overrides
   if (env["NOODLE_EXTRACTOR_ENABLED"] !== undefined) {
