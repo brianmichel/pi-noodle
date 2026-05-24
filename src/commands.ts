@@ -508,33 +508,46 @@ async function runEdit(ui: CtxUi, queryText: string): Promise<void> {
 async function runReview(ui: CtxUi): Promise<void> {
   try {
     const memories = await memoryService.list();
+    const pending = memoryService.listPendingCandidates();
 
-    // Focus on auto-saved memories; show at most 10
     const autoSaved = memories
       .filter((m) => {
         const src = m.metadata.source as string | undefined;
-        return src === "heuristic" || src === "repetition" || src === "llm_extracted";
+        return src === "heuristic" || src === "repetition" || src === "llm_extracted" || src === "consolidated";
       })
       .slice(0, 10);
 
-    if (autoSaved.length === 0) {
-      ui.notify("No auto-saved memories to review.", "info");
+    if (autoSaved.length === 0 && pending.length === 0) {
+      ui.notify("No auto-saved or pending memory candidates to review.", "info");
       return;
     }
 
-    ui.notify("─── Auto-saved memories ───", "info");
-    for (let i = 0; i < autoSaved.length; i++) {
-      const m = autoSaved[i]!;
-      const src = m.metadata.source ?? "?";
-      const cat = m.category ?? m.categories[0] ?? "?";
-      const conf = typeof m.metadata.confidence === "number"
-        ? ` ${Math.round((m.metadata.confidence as number) * 100)}%`
-        : "";
-      ui.notify(`[${i + 1}] ${m.text}  (${cat}, ${src}${conf})`, "info");
+    if (autoSaved.length > 0) {
+      ui.notify("─── Auto-saved memories ───", "info");
+      for (let i = 0; i < autoSaved.length; i++) {
+        const m = autoSaved[i]!;
+        const src = m.metadata.source ?? "?";
+        const cat = m.category ?? m.categories[0] ?? "?";
+        const conf = typeof m.metadata.confidence === "number"
+          ? ` ${Math.round((m.metadata.confidence as number) * 100)}%`
+          : "";
+        ui.notify(`[a${i + 1}] ${m.text}  (${cat}, ${src}${conf})`, "info");
+      }
+    }
+
+    if (pending.length > 0) {
+      ui.notify("─── Pending candidates ───", "info");
+      for (let i = 0; i < pending.length; i++) {
+        const candidate = pending[i]!;
+        ui.notify(
+          `[p${i + 1}] ${candidate.text}  (score ${candidate.score}, seen ${candidate.count}×, ${Math.round(candidate.strongestConfidence * 100)}%)`,
+          "info",
+        );
+      }
     }
 
     const input = await ui.input(
-      "Enter numbers to delete (comma-separated), or press Enter to skip",
+      "Delete saved memories with a1,a2 or dismiss pending with p1,p2. Press Enter to skip",
       "",
     );
 
@@ -543,28 +556,50 @@ async function runReview(ui: CtxUi): Promise<void> {
       return;
     }
 
-    const indices = input
-      .split(",")
-      .map((s) => parseInt(s.trim(), 10) - 1)
-      .filter((n) => n >= 0 && n < autoSaved.length);
+    const savedSelections: MemoryRecord[] = [];
+    const pendingSelections: string[] = [];
 
-    if (indices.length === 0) {
+    for (const token of input.split(",").map((value) => value.trim().toLowerCase()).filter(Boolean)) {
+      const match = token.match(/^([ap])(\d+)$/);
+      if (!match) continue;
+      const index = parseInt(match[2] ?? "0", 10) - 1;
+      if (match[1] === "a" && index >= 0 && index < autoSaved.length) {
+        savedSelections.push(autoSaved[index]!);
+      }
+      if (match[1] === "p" && index >= 0 && index < pending.length) {
+        pendingSelections.push(pending[index]!.key);
+      }
+    }
+
+    if (savedSelections.length === 0 && pendingSelections.length === 0) {
       ui.notify("No valid selections — no changes made.", "info");
       return;
     }
 
-    const toDelete = indices.map((i) => autoSaved[i]!);
-    const preview = toDelete.map((m) => `  • ${m.text}`).join("\n");
-    const ok = await ui.confirm(`Delete ${toDelete.length} memories?`, preview);
+    const preview = [
+      ...savedSelections.map((m) => `  delete saved: ${m.text}`),
+      ...pendingSelections.map((key) => {
+        const signal = pending.find((candidate) => candidate.key === key);
+        return `  dismiss pending: ${signal?.text ?? key}`;
+      }),
+    ].join("\n");
+    const ok = await ui.confirm("Apply review changes?", preview);
     if (!ok) {
       ui.notify("Cancelled.", "info");
       return;
     }
 
-    for (const m of toDelete) {
+    for (const m of savedSelections) {
       if (m.id) await memoryService.delete(m.id);
     }
-    ui.notify(`Deleted ${toDelete.length} memories.`, "info");
+    for (const key of pendingSelections) {
+      memoryService.dismissPendingCandidate(key);
+    }
+
+    ui.notify(
+      `Review updated: removed ${savedSelections.length} saved and dismissed ${pendingSelections.length} pending candidates.`,
+      "info",
+    );
   } catch (err) {
     ui.notify(
       `Review failed: ${err instanceof Error ? err.message : String(err)}`,

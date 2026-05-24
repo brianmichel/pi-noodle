@@ -6,6 +6,7 @@ import {
   buildSessionSignature,
   collectSessionMessages,
   ensureMessages,
+  selectExtractorMessages,
   selectMemoryWorthMessages,
 } from "../session.ts";
 import type { JsonObject, NotificationTarget, SessionManagerLike } from "../types.ts";
@@ -14,13 +15,14 @@ import { extractMemoriesFromMessages } from "./extractor.ts";
 import {
   buildSignalKey,
   categoriesForPrompt,
+  evaluateCandidatePromotion,
   prefilterUserMessage,
-  shouldPromoteCandidate,
   shouldRetrieveMemories,
 } from "./policy.ts";
 import type {
   AddMemoryInput,
   LocalSignal,
+  MemoryCandidate,
   MemoryCategory,
   MemoryRecord,
   MemorySearchInput,
@@ -76,9 +78,12 @@ export class MemoryService {
     return this.backend.search({
       query: prompt,
       limit,
-      threshold: 0.35,
+      threshold: 0.22,
       categories: categoriesForPrompt(prompt),
       scope: this.withDefaultScope(),
+    }).then((results) => {
+      this.noteRetrievedMemories(results);
+      return results;
     });
   }
 
@@ -89,40 +94,42 @@ export class MemoryService {
     let queued = false;
 
     for (const candidate of prefilter.candidates) {
-      const key = buildSignalKey(candidate);
-      const signal = this.localSignals.get(key) ?? { key, count: 0, lastSeenAt: 0 };
-      signal.count += 1;
-      signal.lastSeenAt = Date.now();
-      this.localSignals.set(key, signal);
+      const signal = this.recordCandidateEvidence(candidate);
+      const decision = evaluateCandidatePromotion(candidate, signal);
 
-      if (this.recentlySaved.has(key) || !shouldPromoteCandidate(candidate, signal)) {
+      if (this.recentlySaved.has(signal.key) || !decision.shouldPromote) {
         continue;
       }
 
       queued = true;
-      this.recentlySaved.add(key);
+      this.recentlySaved.add(signal.key);
       enqueueWriteTask({
         label: "Memory automatic capture",
         ...(target ? { target } : {}),
         task: async () => {
-          const result = await this.addCandidateIfNovel(candidate.text, candidate.normalized, {
+          const result = await this.promoteSignal(signal, decision.score, decision.reasons, {
             category: candidate.category,
             categories: [candidate.category],
             durability: candidate.durability,
-            confidence: candidate.confidence,
+            confidence: signal.strongestConfidence,
             source: signal.count >= 2 && !candidate.explicit ? "repetition" : candidate.source,
             signal_count: signal.count,
-            trigger_reasons: candidate.reasons,
+            trigger_reasons: signal.reasons,
+            promotion_score: decision.score,
+            promotion_reasons: decision.reasons,
             assistant_id: DEFAULT_AGENT_ID,
             auto_saved: true,
-            ...candidate.metadata,
+            ...signal.metadata,
           });
-          if (result !== "saved") {
-            this.recentlySaved.delete(key);
+          if (result === "saved" || result === "merged") {
+            signal.promotedAt = Date.now();
+            signal.lastPromotionScore = decision.score;
+          } else {
+            this.recentlySaved.delete(signal.key);
           }
         },
         onFailure: () => {
-          this.recentlySaved.delete(key);
+          this.recentlySaved.delete(signal.key);
         },
       });
     }
@@ -185,7 +192,7 @@ export class MemoryService {
   ): boolean {
     if (!model) return false;
 
-    const messages = selectMemoryWorthMessages(collectSessionMessages(sessionManager));
+    const messages = selectExtractorMessages(collectSessionMessages(sessionManager));
     if (messages.length < 4) return false;
 
     enqueueWriteTask({
@@ -193,18 +200,46 @@ export class MemoryService {
       ...(target ? { target } : {}),
       task: async () => {
         const candidates = await extractMemoriesFromMessages(messages, model);
-        for (const candidate of candidates) {
-          if (candidate.confidence < 0.6) continue;
-          await this.addCandidateIfNovel(candidate.text, candidate.text.toLowerCase(), {
+        for (const extracted of candidates) {
+          if (extracted.confidence < 0.58) continue;
+
+          const candidate: MemoryCandidate = {
+            text: extracted.text,
+            normalized: extracted.text.toLowerCase(),
+            category: extracted.category,
+            durability: extracted.durability,
+            source: "llm_extracted",
+            confidence: extracted.confidence,
+            explicit: false,
+            reasons: [extracted.reason],
+            metadata: {
+              trigger: extracted.reason,
+            },
+          };
+
+          const signal = this.recordCandidateEvidence(candidate, { countIncrement: extracted.confidence >= 0.85 ? 2 : 1 });
+          const decision = evaluateCandidatePromotion(candidate, signal);
+          if (!decision.shouldPromote) continue;
+
+          const result = await this.promoteSignal(signal, decision.score, decision.reasons, {
             category: candidate.category,
             categories: [candidate.category],
             durability: candidate.durability,
-            confidence: candidate.confidence,
+            confidence: signal.strongestConfidence,
             source: "llm_extracted",
-            trigger_reasons: [candidate.reason],
+            signal_count: signal.count,
+            trigger_reasons: signal.reasons,
+            promotion_score: decision.score,
+            promotion_reasons: decision.reasons,
             assistant_id: DEFAULT_AGENT_ID,
             auto_saved: true,
+            extractor_reinforced: true,
+            ...signal.metadata,
           });
+          if (result === "saved" || result === "merged") {
+            signal.promotedAt = Date.now();
+            signal.lastPromotionScore = decision.score;
+          }
         }
       },
     });
@@ -226,7 +261,30 @@ export class MemoryService {
     });
   }
 
-  async addCandidateIfNovel(text: string, normalized: string, metadata: JsonObject): Promise<"saved" | "skipped"> {
+  listPendingCandidates(): Array<LocalSignal & { score: number; promotionReasons: string[] }> {
+    return Array.from(this.localSignals.values())
+      .filter((signal) => !signal.promotedAt)
+      .map((signal) => {
+        const candidate = signalToCandidate(signal);
+        const decision = evaluateCandidatePromotion(candidate, signal);
+        return {
+          ...signal,
+          score: decision.score,
+          promotionReasons: decision.reasons,
+        };
+      })
+      .sort((a, b) => b.score - a.score || b.count - a.count || b.lastSeenAt - a.lastSeenAt)
+      .slice(0, 10);
+  }
+
+  dismissPendingCandidate(key: string): boolean {
+    const signal = this.localSignals.get(key);
+    if (!signal || signal.promotedAt) return false;
+    this.localSignals.delete(key);
+    return true;
+  }
+
+  async addCandidateIfNovel(text: string, normalized: string, metadata: JsonObject): Promise<"saved" | "merged" | "skipped"> {
     const existing = await this.list();
     const normalizedValue = normalized.trim().toLowerCase();
     const duplicate = existing.find((memory) => {
@@ -236,9 +294,13 @@ export class MemoryService {
 
     if (duplicate?.id) {
       await this.update(duplicate.id, {
-        metadata: mergeMemoryMetadata(duplicate.metadata, metadata),
+        metadata: mergeMemoryMetadata(duplicate.metadata, {
+          ...metadata,
+          retrieval_count: duplicate.retrievalCount ?? 0,
+          last_retrieved_at: duplicate.lastRetrieved ?? null,
+        }),
       });
-      return "skipped";
+      return "merged";
     }
     if (duplicate) {
       return "skipped";
@@ -256,6 +318,86 @@ export class MemoryService {
       ...(categories ? { categories } : {}),
     });
     return "saved";
+  }
+
+  private recordCandidateEvidence(candidate: MemoryCandidate, options?: { countIncrement?: number }): LocalSignal {
+    const key = this.findMatchingSignalKey(candidate) ?? buildSignalKey(candidate);
+    const signal = this.localSignals.get(key) ?? {
+      key,
+      text: candidate.text,
+      normalized: candidate.normalized,
+      category: candidate.category,
+      durability: candidate.durability,
+      source: candidate.source,
+      explicit: candidate.explicit,
+      count: 0,
+      lastSeenAt: 0,
+      strongestConfidence: 0,
+      reasons: [],
+      metadata: {},
+    };
+
+    signal.text = candidate.text;
+    signal.normalized = candidate.normalized;
+    signal.category = candidate.category;
+    signal.durability = candidate.durability;
+    signal.source = candidate.source;
+    signal.explicit = signal.explicit || candidate.explicit;
+    signal.count += options?.countIncrement ?? 1;
+    signal.lastSeenAt = Date.now();
+    signal.strongestConfidence = Math.max(signal.strongestConfidence, candidate.confidence);
+    signal.reasons = Array.from(new Set([...signal.reasons, ...candidate.reasons]));
+    signal.metadata = {
+      ...signal.metadata,
+      ...candidate.metadata,
+    };
+    this.localSignals.set(key, signal);
+    return signal;
+  }
+
+  private async promoteSignal(signal: LocalSignal, score: number, promotionReasons: string[], metadata: JsonObject): Promise<"saved" | "merged" | "skipped"> {
+    return this.addCandidateIfNovel(signal.text, signal.normalized, {
+      ...metadata,
+      confidence: signal.strongestConfidence,
+      signal_count: signal.count,
+      trigger_reasons: signal.reasons,
+      promotion_score: score,
+      promotion_reasons: promotionReasons,
+      last_seen_at: signal.lastSeenAt,
+      retrieval_signal_count: signal.retrievalCount ?? 0,
+      last_retrieved_at: signal.lastRetrievedAt ?? null,
+    });
+  }
+
+  private findMatchingSignalKey(candidate: MemoryCandidate): string | null {
+    for (const [key, signal] of this.localSignals.entries()) {
+      if (signal.category !== candidate.category) continue;
+      if (
+        signal.normalized === candidate.normalized ||
+        signal.normalized.includes(candidate.normalized) ||
+        candidate.normalized.includes(signal.normalized)
+      ) {
+        return key;
+      }
+    }
+    return null;
+  }
+
+  private noteRetrievedMemories(records: MemoryRecord[]): void {
+    const now = Date.now();
+    for (const record of records) {
+      const normalized = record.text.trim().toLowerCase();
+      for (const signal of this.localSignals.values()) {
+        if (
+          signal.normalized === normalized ||
+          signal.normalized.includes(normalized) ||
+          normalized.includes(signal.normalized)
+        ) {
+          signal.retrievalCount = (signal.retrievalCount ?? 0) + 1;
+          signal.lastRetrievedAt = now;
+        }
+      }
+    }
   }
 
   private withDefaultScope(scope?: MemoryScope): MemoryScope {
@@ -296,6 +438,26 @@ function mergeMemoryMetadata(existing: JsonObject, incoming: JsonObject): JsonOb
     merged["confidence"] = Math.max(existingConfidence ?? 0, incomingConfidence ?? 0);
   }
 
+  const existingRetrievalSignal = typeof existing["retrieval_signal_count"] === "number" ? existing["retrieval_signal_count"] : 0;
+  const incomingRetrievalSignal = typeof incoming["retrieval_signal_count"] === "number" ? incoming["retrieval_signal_count"] : 0;
+  if (existingRetrievalSignal || incomingRetrievalSignal) {
+    merged["retrieval_signal_count"] = Math.max(existingRetrievalSignal, incomingRetrievalSignal);
+  }
+
   merged["last_seen_at"] = Date.now();
   return merged;
+}
+
+function signalToCandidate(signal: LocalSignal): MemoryCandidate {
+  return {
+    text: signal.text,
+    normalized: signal.normalized,
+    category: signal.category,
+    durability: signal.durability,
+    source: signal.source,
+    confidence: signal.strongestConfidence,
+    explicit: signal.explicit,
+    reasons: signal.reasons,
+    metadata: signal.metadata,
+  };
 }

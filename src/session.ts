@@ -45,7 +45,28 @@ export function buildSessionSignature(sessionManager: SessionManagerLike): strin
   return `${sessionFile}::${leafId}`;
 }
 
+function looksLikeToolOrCodeChatter(content: string): boolean {
+  return /```|^\$ |\bstderr\b|\bstdout\b|traceback|exception|stack trace|npm ERR!/im.test(content);
+}
+
 export function selectMemoryWorthMessages(messages: MemoryMessage[]): MemoryMessage[] {
-  const filtered = messages.filter((message) => message.content.trim().length >= 20);
+  const filtered = messages.filter((message) => {
+    const trimmed = message.content.trim();
+    return trimmed.length >= 20 && !looksLikeToolOrCodeChatter(trimmed);
+  });
   return filtered.slice(-20);
+}
+
+export function selectExtractorMessages(messages: MemoryMessage[]): MemoryMessage[] {
+  const filtered = messages.filter((message) => {
+    const trimmed = message.content.trim();
+    if (trimmed.length < 24 || looksLikeToolOrCodeChatter(trimmed)) return false;
+    if (message.role === "user") return true;
+    return /\b(prefer|usually|always|never|avoid|default|remember|name is|we(?:'|’)re|we are|our stack|standardi[sz]e)\b/i.test(trimmed);
+  });
+
+  const preferred = filtered.slice(-12);
+  const userCount = preferred.filter((message) => message.role === "user").length;
+  if (preferred.length >= 4 && userCount >= 2) return preferred;
+  return messages.slice(-8).filter((message) => message.content.trim().length >= 24);
 }

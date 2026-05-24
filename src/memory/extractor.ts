@@ -14,9 +14,12 @@ Return a JSON array of memory objects. Each object must have:
 
 Rules:
 - Only extract facts stable across sessions — not task-specific details
+- Prioritize user defaults, repeated habits, negative preferences, and project conventions likely to matter later
+- Prefer facts stated by the user over assistant speculation
 - Skip: file contents, code snippets, transient decisions, error messages, tool results
 - Skip: credentials, API keys, tokens, passwords
 - Skip: conversational mechanics ("the user asked", "I replied")
+- Skip: anything that only matters for the current task, file, or response
 - Identity facts (name, role, background) → durable. Preferences and conventions → semi_durable.
 - Be conservative: return [] if nothing clearly warrants long-term memory
 - Return ONLY the JSON array, no other text`;

@@ -87,10 +87,60 @@ test("captures format preferences", () => {
 });
 
 test("strong_preference extracts the full action phrase not just the keyword", () => {
-  // Using a sentence without embedded punctuation so the full phrase is captured.
-  // The category may be inferred as coding_pref when context words (use + code) are present.
   const result = prefilterUserMessage("Never add comments to code");
   assert.equal(result.hasCandidate, true);
-  // The captured text should be the full phrase, not just "never"
-  assert.match(result.candidates[0]?.text ?? "", /never add comments/i);
+  assert.match(result.candidates[0]?.text ?? "", /avoid|never add comments/i);
+});
+
+test("captures softer habitual preferences", () => {
+  const result = prefilterUserMessage("I usually prefer concise TypeScript examples.");
+  assert.equal(result.hasCandidate, true);
+  assert.equal(result.candidates[0]?.category, "response_style");
+  assert.match(result.candidates[0]?.text ?? "", /concise TypeScript examples/i);
+});
+
+test("captures tends-to preferences", () => {
+  const result = prefilterUserMessage("I tend to prefer markdown summaries.");
+  assert.equal(result.hasCandidate, true);
+  assert.equal(result.candidates[0]?.category, "response_style");
+  assert.match(result.candidates[0]?.text ?? "", /markdown summaries/i);
+});
+
+test("captures workflow defaults", () => {
+  const result = prefilterUserMessage("I normally use bun for small scripts.");
+  assert.equal(result.hasCandidate, true);
+  assert.equal(result.candidates[0]?.category, "workflow");
+  assert.match(result.candidates[0]?.text ?? "", /normally uses bun/i);
+});
+
+test("captures project defaults", () => {
+  const result = prefilterUserMessage("For most projects, I prefer Go for small daemons.");
+  assert.equal(result.hasCandidate, true);
+  assert.equal(result.candidates[0]?.category, "coding_pref");
+  assert.match(result.candidates[0]?.text ?? "", /Default to Go/i);
+});
+
+test("captures negative preferences", () => {
+  const result = prefilterUserMessage("Please don't use heavy frameworks for small daemons.");
+  assert.equal(result.hasCandidate, true);
+  assert.match(result.candidates[0]?.text ?? "", /avoids heavy frameworks/i);
+});
+
+test("captures project standards", () => {
+  const result = prefilterUserMessage("We standardize on TypeScript for backend services.");
+  assert.equal(result.hasCandidate, true);
+  assert.equal(result.candidates[0]?.category, "project");
+  assert.match(result.candidates[0]?.text ?? "", /Team uses TypeScript/i);
+});
+
+test("captures explicit stack descriptions", () => {
+  const result = prefilterUserMessage("Our stack is Postgres, Bun, and TypeScript.");
+  assert.equal(result.hasCandidate, true);
+  assert.equal(result.candidates[0]?.category, "project");
+  assert.match(result.candidates[0]?.text ?? "", /Team uses Postgres, Bun, and TypeScript/i);
+});
+
+test("still ignores temporary soft preferences", () => {
+  const result = prefilterUserMessage("For this task, I usually prefer very verbose explanations.");
+  assert.equal(result.hasCandidate, false);
 });

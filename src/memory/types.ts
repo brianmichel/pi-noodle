@@ -89,8 +89,21 @@ export type PrefilterResult = {
 
 export type LocalSignal = {
   key: string;
+  text: string;
+  normalized: string;
+  category: MemoryCategory;
+  durability: MemoryDurability;
+  source: MemorySource;
+  explicit: boolean;
   count: number;
   lastSeenAt: number;
+  strongestConfidence: number;
+  reasons: string[];
+  metadata: JsonObject;
+  retrievalCount?: number;
+  lastRetrievedAt?: number;
+  promotedAt?: number;
+  lastPromotionScore?: number;
 };
 
 export type ExtractionCandidate = {

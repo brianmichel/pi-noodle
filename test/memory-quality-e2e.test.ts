@@ -96,6 +96,27 @@ test("quality eval: respects explicit forget and update against stored records",
   }
 });
 
+test("quality eval: promotes softer preferences after reinforcement while blocking temporary soft prompts", async () => {
+  const { service, close } = await createService();
+
+  try {
+    service.queueAutomaticCapture("I usually prefer concise TypeScript examples.");
+    await flushPendingWrites();
+    service.queueAutomaticCapture("I usually prefer concise TypeScript examples.");
+    await flushPendingWrites();
+
+    service.queueAutomaticCapture("For this task, I usually prefer very verbose explanations.");
+    await flushPendingWrites();
+
+    const saved = await service.list();
+    const texts = recordTexts(saved);
+    assert.ok(texts.some((text) => /concise TypeScript examples/i.test(text)));
+    assert.ok(texts.every((text) => !/very verbose explanations/i.test(text)));
+  } finally {
+    close();
+  }
+});
+
 test("quality eval: memory retrieval stays isolated across assistant, user, and session scopes", async () => {
   const db = createClient({ url: ":memory:" });
   const backend = new TursoBackend(db, fakeSemanticEmbedder);

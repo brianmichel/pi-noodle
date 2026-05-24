@@ -89,7 +89,7 @@ test("MemoryService dedupes novel candidates before writing", async () => {
     categories: ["response_style"],
   });
 
-  assert.equal(skipped, "skipped");
+  assert.equal(skipped, "merged");
   assert.equal(saved, "saved");
   assert.equal(backend.added.length, 1);
   assert.equal(backend.added[0]?.text, "User prefers concise responses");
@@ -129,25 +129,51 @@ test("MemoryService retrieval ranks relevant memories and skips chatter", async 
   assert.equal(backend.recordedRetrievals.length, 0);
 });
 
-test("MemoryService automatic capture promotes repeated candidates", async () => {
+test("MemoryService automatic capture stages candidates before promotion", async () => {
   const backend = new FakeMemoryBackend();
   const service = new MemoryService(backend);
 
-  const first = service.queueAutomaticCapture("Use Elixir by default for backend code.");
+  const first = service.queueAutomaticCapture("I usually prefer concise TypeScript examples.");
   await flushPendingWrites();
-  const second = service.queueAutomaticCapture("Use Elixir by default for backend code.");
-  await flushPendingWrites();
+  const pendingAfterFirst = service.listPendingCandidates();
 
   assert.equal(first, false);
-  assert.equal(second, false);
   assert.equal(backend.added.length, 0);
+  assert.equal(pendingAfterFirst.length, 1);
+  assert.match(pendingAfterFirst[0]?.text ?? "", /concise TypeScript examples/i);
 
-  const third = service.queueAutomaticCapture("Use Elixir by default for backend code.");
+  const second = service.queueAutomaticCapture("I usually prefer concise TypeScript examples.");
   await flushPendingWrites();
 
-  assert.equal(third, true);
+  assert.equal(second, true);
   assert.equal(backend.added.length, 1);
-  assert.equal(backend.added[0]?.text, "Default to Elixir");
+  assert.equal(backend.added[0]?.text, "User prefers concise TypeScript examples");
+  assert.equal(service.listPendingCandidates().length, 0);
+});
+
+test("MemoryService captures strong negative preferences quickly", async () => {
+  const backend = new FakeMemoryBackend();
+  const service = new MemoryService(backend);
+
+  const queued = service.queueAutomaticCapture("Please don't use heavy frameworks for small daemons.");
+  await flushPendingWrites();
+
+  assert.equal(queued, true);
+  assert.equal(backend.added.length, 1);
+  assert.match(backend.added[0]?.text ?? "", /avoid|frameworks/i);
+});
+
+test("MemoryService can dismiss pending candidates", async () => {
+  const backend = new FakeMemoryBackend();
+  const service = new MemoryService(backend);
+
+  service.queueAutomaticCapture("I tend to prefer markdown summaries.");
+  await flushPendingWrites();
+
+  const pending = service.listPendingCandidates();
+  assert.equal(pending.length, 1);
+  assert.equal(service.dismissPendingCandidate(pending[0]!.key), true);
+  assert.equal(service.listPendingCandidates().length, 0);
 });
 
 test("MemoryService forwards generic get, update, and delete operations", async () => {

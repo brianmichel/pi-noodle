@@ -121,6 +121,102 @@ const CASES: MemoryEvalCase[] = [
       },
     ],
   },
+  {
+    name: "captures softer habitual preferences after reinforcement",
+    messages: [
+      "I usually prefer concise TypeScript examples.",
+      "I usually prefer concise TypeScript examples.",
+    ],
+    expectedSaved: ["User prefers concise TypeScript examples"],
+    queries: [
+      {
+        query: "How should you format examples for me?",
+        shouldRetrieve: ["concise TypeScript examples"],
+      },
+    ],
+  },
+  {
+    name: "captures negative preferences quickly",
+    messages: ["Please don't use heavy frameworks for small daemons."],
+    expectedSaved: ["heavy frameworks"],
+    queries: [
+      {
+        query: "How should I build a small daemon?",
+        shouldRetrieve: ["heavy frameworks"],
+      },
+    ],
+  },
+  {
+    name: "captures workflow defaults after reinforcement",
+    messages: [
+      "I normally use bun for small scripts.",
+      "I normally use bun for small scripts.",
+    ],
+    expectedSaved: ["User normally uses bun for small scripts"],
+    queries: [
+      {
+        query: "What do I normally use for small scripts?",
+        shouldRetrieve: ["bun"],
+      },
+    ],
+  },
+  {
+    name: "captures project standards immediately",
+    messages: ["We standardize on TypeScript for backend services."],
+    expectedSaved: ["Team uses TypeScript for backend services"],
+    queries: [
+      {
+        query: "What should our backend stack use?",
+        shouldRetrieve: ["TypeScript"],
+      },
+    ],
+  },
+  {
+    name: "captures explicit stack descriptions",
+    messages: ["Our stack is Postgres, Bun, and TypeScript."],
+    expectedSaved: ["Team uses Postgres, Bun, and TypeScript"],
+    queries: [
+      {
+        query: "What stack does this project use?",
+        shouldRetrieve: ["Postgres", "TypeScript"],
+      },
+    ],
+  },
+  {
+    name: "captures project defaults after reinforcement",
+    messages: [
+      "For most projects, I prefer Go for small daemons.",
+      "For most projects, I prefer Go for small daemons.",
+    ],
+    expectedSaved: ["Default to Go for small daemons"],
+    queries: [
+      {
+        query: "What language should I pick for a small crossplatform daemon?",
+        shouldRetrieve: ["Go"],
+      },
+    ],
+  },
+  {
+    name: "still rejects temporary soft preferences",
+    messages: ["For this task, I usually prefer very verbose explanations."],
+    expectedNotSaved: ["very verbose explanations"],
+  },
+  {
+    name: "still rejects sensitive content hidden in preference phrasing",
+    messages: ["I usually use this API key sk-secret-123 for debugging."],
+    expectedNotSaved: ["sk-secret-123"],
+  },
+  {
+    name: "captures avoid-language preference for coding context",
+    messages: ["Avoid Python for backend services."],
+    expectedSaved: ["Python"],
+    queries: [
+      {
+        query: "Avoid Python for backend services",
+        shouldRetrieve: ["Python"],
+      },
+    ],
+  },
 ];
 
 for (const evalCase of CASES) {
