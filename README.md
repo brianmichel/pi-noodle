@@ -25,14 +25,18 @@ Settings are saved to `~/.pi/noodle/config.json` — memories travel with you ac
 ## `/noodle` command
 
 ```
-/noodle           Show current config (paths, endpoint, masked API key)
-/noodle settings  Interactive single-screen configuration editor with validation
-/noodle setup     Alias for /noodle settings
-/noodle init      Create a default config file for manual editing
-/noodle web       Start the Memory Explorer (auto-stops when all tabs close)
-/noodle web stop  Stop the explorer immediately
-/noodle web dev   Dev mode — hot reload on save, use web stop when done
-/noodle web 8080  Start on a custom port
+/noodle                  Show current config (paths, endpoint, masked API key)
+/noodle remember <text>  Save a memory directly
+/noodle forget <query>   Find and delete a memory
+/noodle edit <query>     Find and update a memory
+/noodle review           Review recent auto-saved memories
+/noodle settings         Interactive single-screen configuration editor with validation
+/noodle setup            Alias for /noodle settings
+/noodle init             Create a default config file for manual editing
+/noodle web              Start the Memory Explorer (auto-stops when all tabs close)
+/noodle web stop         Stop the explorer immediately
+/noodle web dev          Dev mode — hot reload on save, use web stop when done
+/noodle web 8080         Start on a custom port
 ```
 
 For UI development outside Pi, run `npm run web:dev` from the repo — it connects to your configured database and reloads the browser whenever you edit `src/web/index.html`.

@@ -30,6 +30,9 @@ export type MemoryRecord = {
   metadata: JsonObject;
   score?: number;
   scope?: MemoryScope;
+  createdAt?: number;
+  lastRetrieved?: number;
+  retrievalCount?: number;
 };
 
 export type AddMemoryInput = {
