@@ -3,6 +3,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { resolveConfig, resolveConfigPath, writeConfig } from "./config.ts";
 import { runConfigScreen } from "./config-screen.ts";
 import { EXTRACTOR_DEFAULT_MODEL, memoryService } from "./memory/runtime.ts";
+import type { MemoryRecord } from "./memory/types.ts";
 import { maskSecret } from "./utils.ts";
 import {
   isExplorerRunning,
@@ -54,7 +55,7 @@ type CtxUi = {
 export function registerCommands(pi: ExtensionAPI): void {
   pi.registerCommand("noodle", {
     description:
-      "Noodle memory — status, settings, review, and web explorer",
+      "Noodle memory — status, remember/forget/edit, review, and web explorer",
     handler: async (args, ctx) => {
       const sub = args.trim();
 
@@ -65,6 +66,21 @@ export function registerCommands(pi: ExtensionAPI): void {
 
       if (sub === "review") {
         await runReview(ctx.ui as unknown as CtxUi);
+        return;
+      }
+
+      if (sub.startsWith("remember")) {
+        await runRemember(ctx.ui as unknown as CtxUi, sub.slice("remember".length).trim());
+        return;
+      }
+
+      if (sub.startsWith("forget")) {
+        await runForget(ctx.ui as unknown as CtxUi, sub.slice("forget".length).trim());
+        return;
+      }
+
+      if (sub.startsWith("edit")) {
+        await runEdit(ctx.ui as unknown as CtxUi, sub.slice("edit".length).trim());
         return;
       }
 
@@ -121,7 +137,7 @@ export function registerCommands(pi: ExtensionAPI): void {
       // Default: show status
       const config = resolveConfig();
       ctx.ui.notify("─── Noodle Memory ───", "info");
-      ctx.ui.notify("Commands: /noodle settings | /noodle review | /noodle web", "info");
+      ctx.ui.notify("Commands: /noodle remember | /noodle forget | /noodle edit | /noodle review | /noodle settings | /noodle web", "info");
       ctx.ui.notify(`Config: ${resolveConfigPath()}`, "info");
       ctx.ui.notify(
         `Database: ${config.db.mode}  ${showDbTarget(config)}`,
@@ -395,6 +411,98 @@ async function collectExtractor(
   };
 }
 
+// ---- Memory management commands ----
+
+async function runRemember(ui: CtxUi, initialText: string): Promise<void> {
+  try {
+    const text = (initialText || await ui.input("Memory to save", "") || "").trim();
+    if (!text) {
+      ui.notify("Nothing saved — memory text is required.", "info");
+      return;
+    }
+
+    await memoryService.add({
+      text,
+      metadata: {
+        source: "manual_command",
+        auto_saved: false,
+      },
+    });
+    ui.notify(`Saved memory: ${summarizeMemory(text)}`, "info");
+  } catch (err) {
+    ui.notify(
+      `Remember failed: ${err instanceof Error ? err.message : String(err)}`,
+      "error",
+    );
+  }
+}
+
+async function runForget(ui: CtxUi, queryText: string): Promise<void> {
+  try {
+    const query = (queryText || await ui.input("Find memory to forget", "") || "").trim();
+    if (!query) {
+      ui.notify("Forget cancelled — enter a memory query.", "info");
+      return;
+    }
+
+    const target = await pickMemoryForAction(ui, query, "delete");
+    if (!target?.id) return;
+
+    const ok = await ui.confirm("Delete this memory?", target.text);
+    if (!ok) {
+      ui.notify("Forget cancelled.", "info");
+      return;
+    }
+
+    await memoryService.delete(target.id);
+    ui.notify(`Deleted memory: ${summarizeMemory(target.text)}`, "info");
+  } catch (err) {
+    ui.notify(
+      `Forget failed: ${err instanceof Error ? err.message : String(err)}`,
+      "error",
+    );
+  }
+}
+
+async function runEdit(ui: CtxUi, queryText: string): Promise<void> {
+  try {
+    const query = (queryText || await ui.input("Find memory to edit", "") || "").trim();
+    if (!query) {
+      ui.notify("Edit cancelled — enter a memory query.", "info");
+      return;
+    }
+
+    const target = await pickMemoryForAction(ui, query, "edit");
+    if (!target?.id) return;
+
+    const replacement = (await ui.input("Replacement text", target.text) || "").trim();
+    if (!replacement) {
+      ui.notify("Edit cancelled — replacement text is required.", "info");
+      return;
+    }
+
+    if (replacement === target.text) {
+      ui.notify("No changes made.", "info");
+      return;
+    }
+
+    await memoryService.update(target.id, {
+      text: replacement,
+      metadata: {
+        ...target.metadata,
+        source: "manual_edit",
+        updated_from: target.text,
+      },
+    });
+    ui.notify(`Updated memory: ${summarizeMemory(replacement)}`, "info");
+  } catch (err) {
+    ui.notify(
+      `Edit failed: ${err instanceof Error ? err.message : String(err)}`,
+      "error",
+    );
+  }
+}
+
 // ---- Review command ----
 
 async function runReview(ui: CtxUi): Promise<void> {
@@ -468,6 +576,60 @@ async function runReview(ui: CtxUi): Promise<void> {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+async function pickMemoryForAction(
+  ui: CtxUi,
+  query: string,
+  action: "edit" | "delete",
+): Promise<MemoryRecord | null> {
+  const matches = await findMemoryMatches(query);
+
+  if (matches.length === 0) {
+    ui.notify(`No memories matched: ${query}`, "info");
+    return null;
+  }
+
+  if (matches.length === 1) {
+    return matches[0] ?? null;
+  }
+
+  ui.notify(`Top matches for ${action}:`, "info");
+  for (let i = 0; i < matches.length; i += 1) {
+    ui.notify(`[${i + 1}] ${summarizeMemory(matches[i]!.text)}`, "info");
+  }
+
+  const raw = (await ui.input(`Choose memory to ${action} (1-${matches.length})`, "1") || "").trim();
+  const index = parseInt(raw, 10) - 1;
+  if (Number.isNaN(index) || index < 0 || index >= matches.length) {
+    ui.notify(`Invalid selection — cancelled ${action}.`, "info");
+    return null;
+  }
+
+  return matches[index] ?? null;
+}
+
+async function findMemoryMatches(query: string): Promise<MemoryRecord[]> {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return [];
+
+  const semantic = await memoryService.search({ query, limit: 8 }).catch(() => []);
+  const listed = await memoryService.list();
+  const substring = listed.filter((memory) => memory.text.toLowerCase().includes(normalized));
+
+  const deduped = new Map<string, MemoryRecord>();
+  for (const memory of [...semantic, ...substring]) {
+    const key = memory.id ?? memory.text;
+    if (!deduped.has(key)) deduped.set(key, memory);
+  }
+
+  return Array.from(deduped.values()).slice(0, 8);
+}
+
+function summarizeMemory(text: string, max = 80): string {
+  const singleLine = text.replace(/\s+/g, " ").trim();
+  if (singleLine.length <= max) return singleLine;
+  return `${singleLine.slice(0, Math.max(0, max - 1))}…`;
+}
 
 async function requireInput(
   ui: CtxUi,

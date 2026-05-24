@@ -111,6 +111,9 @@ function rowToRecord(row: Record<string, unknown>): MemoryRecord {
   if (typeof row.category === "string" && row.category.length > 0) {
     record.category = row.category as MemoryCategory;
   }
+  if (typeof row.created_at === "number") record.createdAt = row.created_at;
+  if (typeof row.last_retrieved === "number") record.lastRetrieved = row.last_retrieved;
+  if (typeof row.retrieval_count === "number") record.retrievalCount = row.retrieval_count;
 
   return record;
 }
@@ -278,10 +281,13 @@ export class TursoBackend implements MemoryBackend {
       );
     }
 
-    return records
+    const finalRecords = records
       .sort((a, b) => b._score - a._score)
-      .slice(0, limit)
-      .map(({ _score: score, ...rec }) => ({ ...rec, score }));
+      .slice(0, limit);
+
+    await this.markRetrieved(finalRecords.map((record) => record.id).filter((id): id is string => typeof id === "string"));
+
+    return finalRecords.map(({ _score: score, ...rec }) => ({ ...rec, score }));
   }
 
   async recordRetrievals(ids: string[]): Promise<void> {
@@ -308,7 +314,8 @@ export class TursoBackend implements MemoryBackend {
 
     const result = await this.db.execute({
       sql: `SELECT id, text, category, categories,
-                   user_id, assistant_id, session_id, metadata
+                   user_id, assistant_id, session_id, metadata,
+                   created_at, last_retrieved, retrieval_count
             FROM memories
             ${clause ? `WHERE ${clause}` : ""}
             ORDER BY created_at DESC`,
@@ -323,7 +330,8 @@ export class TursoBackend implements MemoryBackend {
 
     const result = await this.db.execute({
       sql: `SELECT id, text, category, categories,
-                   user_id, assistant_id, session_id, metadata
+                   user_id, assistant_id, session_id, metadata,
+                   created_at, last_retrieved, retrieval_count
             FROM memories
             WHERE id = ?`,
       args: [id],
@@ -462,6 +470,20 @@ export class TursoBackend implements MemoryBackend {
   }
 
   // ---- internals --------------------------------------------------------
+
+  private async markRetrieved(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+
+    const now = Date.now();
+    for (const id of ids) {
+      await this.db.execute({
+        sql: `UPDATE memories
+              SET last_retrieved = ?, retrieval_count = COALESCE(retrieval_count, 0) + 1
+              WHERE id = ?`,
+        args: [now, id],
+      });
+    }
+  }
 
   /** Read stored embedding as Float32Array. Returns null on missing row. */
   private async readEmbedding(id: string): Promise<Float32Array | null> {

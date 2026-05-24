@@ -136,6 +136,39 @@ describe("TursoBackend", () => {
     assert.ok(highThreshold.length <= all.length);
   });
 
+  it("tracks retrieval count and timestamp for returned memories", async () => {
+    await backend.add({
+      text: "Track retrieval usage for this memory",
+      scope: { assistantId: "agent-1" },
+    });
+
+    const created = (await backend.list({ scope: { assistantId: "agent-1" } }))
+      .find((m: MemoryRecord) => m.text === "Track retrieval usage for this memory");
+    assert.ok(created?.id);
+    assert.equal(created?.retrievalCount ?? 0, 0);
+    assert.equal(created?.lastRetrieved, undefined);
+
+    const first = await backend.search({
+      query: "retrieval usage memory",
+      scope: { assistantId: "agent-1" },
+      limit: 5,
+    });
+    assert.ok(first.some((m) => m.id === created!.id));
+
+    const afterFirst = await backend.get(created!.id!);
+    assert.equal(afterFirst?.retrievalCount, 1);
+    assert.ok(typeof afterFirst?.lastRetrieved === "number");
+
+    await backend.search({
+      query: "retrieval usage memory",
+      scope: { assistantId: "agent-1" },
+      limit: 5,
+    });
+    const afterSecond = await backend.get(created!.id!);
+    assert.equal(afterSecond?.retrievalCount, 2);
+    assert.ok((afterSecond?.lastRetrieved ?? 0) >= (afterFirst?.lastRetrieved ?? 0));
+  });
+
   it("filters by categories in search", async () => {
     await backend.add({
       text: "Code formatting preference: Prettier",
