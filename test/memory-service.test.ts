@@ -129,51 +129,29 @@ test("MemoryService retrieval ranks relevant memories and skips chatter", async 
   assert.equal(backend.recordedRetrievals.length, 0);
 });
 
-test("MemoryService automatic capture stages candidates before promotion", async () => {
+test("MemoryService automatic capture saves explicit remember requests immediately", async () => {
   const backend = new FakeMemoryBackend();
-  const service = new MemoryService(backend);
+  const service = new MemoryService(backend, { extractorMode: "balanced" });
 
-  const first = service.queueAutomaticCapture("I usually prefer concise TypeScript examples.");
-  await flushPendingWrites();
-  const pendingAfterFirst = service.listPendingCandidates();
-
-  assert.equal(first, false);
-  assert.equal(backend.added.length, 0);
-  assert.equal(pendingAfterFirst.length, 1);
-  assert.match(pendingAfterFirst[0]?.text ?? "", /concise TypeScript examples/i);
-
-  const second = service.queueAutomaticCapture("I usually prefer concise TypeScript examples.");
-  await flushPendingWrites();
-
-  assert.equal(second, true);
-  assert.equal(backend.added.length, 1);
-  assert.equal(backend.added[0]?.text, "User prefers concise TypeScript examples");
-  assert.equal(service.listPendingCandidates().length, 0);
-});
-
-test("MemoryService captures strong negative preferences quickly", async () => {
-  const backend = new FakeMemoryBackend();
-  const service = new MemoryService(backend);
-
-  const queued = service.queueAutomaticCapture("Please don't use heavy frameworks for small daemons.");
+  const queued = service.queueAutomaticCapture("Remember that I prefer concise TypeScript examples.");
   await flushPendingWrites();
 
   assert.equal(queued, true);
   assert.equal(backend.added.length, 1);
-  assert.match(backend.added[0]?.text ?? "", /avoid|frameworks/i);
+  assert.equal(backend.added[0]?.text, "I prefer concise TypeScript examples");
+  assert.equal(service.listPendingCandidates().length, 0);
 });
 
-test("MemoryService can dismiss pending candidates", async () => {
+test("MemoryService no longer heuristically captures implicit preferences", async () => {
   const backend = new FakeMemoryBackend();
-  const service = new MemoryService(backend);
+  const service = new MemoryService(backend, { extractorMode: "balanced" });
 
-  service.queueAutomaticCapture("I tend to prefer markdown summaries.");
+  const queued = service.queueAutomaticCapture("I usually prefer concise TypeScript examples.");
   await flushPendingWrites();
 
-  const pending = service.listPendingCandidates();
-  assert.equal(pending.length, 1);
-  assert.equal(service.dismissPendingCandidate(pending[0]!.key), true);
+  assert.equal(queued, false);
   assert.equal(service.listPendingCandidates().length, 0);
+  assert.equal(backend.added.length, 0);
 });
 
 test("MemoryService forwards generic get, update, and delete operations", async () => {

@@ -152,15 +152,15 @@ export function registerCommands(pi: ExtensionAPI): void {
       );
       ctx.ui.notify(`Endpoint: ${config.embedding.baseUrl}`, "info");
       ctx.ui.notify(`API key: ${maskSecret(config.embedding.apiKey)}`, "info");
-      if (config.extractor?.enabled) {
-        const ec = config.extractor;
-        const modelLabel = ec.model ?? EXTRACTOR_DEFAULT_MODEL;
+      const ec = config.extractor;
+      if ((ec?.mode ?? "off") !== "off") {
+        const modelLabel = ec?.model ?? EXTRACTOR_DEFAULT_MODEL;
         ctx.ui.notify(
-          `Extractor: enabled  ${modelLabel}  every ${ec.triggerEvery ?? 10} turns`,
+          `Memory mode: ${ec?.mode ?? "balanced"}  ${modelLabel}  every ${ec?.triggerEvery ?? 10} turns`,
           "info",
         );
       } else {
-        ctx.ui.notify("Extractor: disabled  (run /noodle settings to enable)", "info");
+        ctx.ui.notify("Memory mode: off", "info");
       }
     },
   });
@@ -205,9 +205,9 @@ async function runSetup(ui: CtxUi): Promise<void> {
       `Embedding: ${provider}  ${embedConfig.summary}`,
     ];
     if (extractorConfig) {
-      summaryLines.push(`Extractor: enabled  ${extractorConfig.partial.model ?? "gpt-4o-mini"}`);
+      summaryLines.push(`Memory mode: ${extractorConfig.partial.mode ?? "balanced"}  ${extractorConfig.partial.model ?? "gpt-4o-mini"}`);
     } else {
-      summaryLines.push("Extractor: disabled");
+      summaryLines.push("Memory mode: off");
     }
 
     const ok = await ui.confirm("Save config?", summaryLines.join("\n"));
@@ -219,7 +219,7 @@ async function runSetup(ui: CtxUi): Promise<void> {
     writeConfig({
       db: dbConfig.partial,
       embedding: embedConfig.partial,
-      ...(extractorConfig ? { extractor: extractorConfig.partial } : { extractor: { enabled: false } }),
+      ...(extractorConfig ? { extractor: extractorConfig.partial } : { extractor: { mode: "off" } }),
     });
     ui.notify("Config saved. /reload to apply.", "info");
   } catch (err) {
@@ -386,11 +386,21 @@ async function collectCustom(
 async function collectExtractor(
   ui: CtxUi,
 ): Promise<{ summary: string; partial: Record<string, unknown> } | null> {
-  const enable = await ui.confirm(
-    "Enable LLM memory extractor?",
-    "Automatically identifies important facts in conversations using Pi's active model. No separate API key needed.",
-  );
-  if (!enable) return null;
+  const modeInput = await ui.select("Memory mode", [
+    "Off — disable proactive extraction",
+    "Balanced — default tradeoff",
+    "Conservative — lower cost, higher precision",
+    "Proactive — more discovery, more review",
+  ]);
+  const mode = modeInput?.startsWith("Off")
+    ? "off"
+    : modeInput?.startsWith("Conservative")
+    ? "conservative"
+    : modeInput?.startsWith("Proactive")
+    ? "proactive"
+    : "balanced";
+
+  if (mode === "off") return null;
 
   const modelInput = await ui.input(
     "Model ID to use (leave blank for default)",
@@ -398,15 +408,16 @@ async function collectExtractor(
   );
   const model = modelInput?.trim() || undefined;
 
-  const triggerInput = await ui.input("Extract every N turns (default 10)", "10");
-  const triggerEvery = parseInt(triggerInput ?? "10", 10);
+  const triggerDefault = mode === "conservative" ? 20 : mode === "proactive" ? 5 : 10;
+  const triggerInput = await ui.input(`Extract every N turns (default ${triggerDefault})`, String(triggerDefault));
+  const triggerEvery = parseInt(triggerInput ?? String(triggerDefault), 10);
 
   return {
-    summary: model ? model : "active model",
+    summary: `${mode}  ${model ? model : "active model"}`,
     partial: {
-      enabled: true,
+      mode,
       ...(model ? { model } : {}),
-      triggerEvery: isNaN(triggerEvery) || triggerEvery < 1 ? 10 : triggerEvery,
+      triggerEvery: isNaN(triggerEvery) || triggerEvery < 1 ? triggerDefault : triggerEvery,
     },
   };
 }

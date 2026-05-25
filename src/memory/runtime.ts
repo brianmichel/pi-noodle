@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
 import { createClient } from "@libsql/client";
-import { resolveConfig } from "../config.ts";
+import { DEFAULT_EXTRACTOR_MODE, defaultExtractorTriggerEvery, resolveConfig } from "../config.ts";
 import type { NoodleConfig } from "../types.ts";
 import type { MemoryBackend } from "./backend.ts";
 import { createOpenAIEmbedder } from "./embedders/openai.ts";
@@ -55,13 +55,15 @@ function createBackend(config: NoodleConfig): MemoryBackend {
 }
 
 const config = resolveConfig();
-export const memoryService = new MemoryService(createBackend(config));
+export const memoryService = new MemoryService(createBackend(config), {
+  extractorMode: config.extractor?.mode ?? DEFAULT_EXTRACTOR_MODE,
+});
 
 export const EXTRACTOR_DEFAULT_MODEL = "deepseek/deepseek-v4-flash:free";
 
-/** Whether LLM extraction is enabled (requires extractor.enabled in config). */
-export const extractorEnabled = config.extractor?.enabled ?? false;
+/** Behavior profile for proactive extraction. */
+export const extractorMode = config.extractor?.mode ?? DEFAULT_EXTRACTOR_MODE;
 /** Model ID to use for extraction; falls back to the default free model when unset. */
 export const extractorModelId = config.extractor?.model ?? EXTRACTOR_DEFAULT_MODEL;
 /** How many user turns trigger an extraction pass. */
-export const extractorTriggerEvery = config.extractor?.triggerEvery ?? 10;
+export const extractorTriggerEvery = config.extractor?.triggerEvery ?? defaultExtractorTriggerEvery(extractorMode === "off" ? DEFAULT_EXTRACTOR_MODE : extractorMode);

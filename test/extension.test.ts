@@ -81,7 +81,7 @@ function createDeps(overrides?: (Partial<MemoryExtensionDeps> & {
         return memories;
       },
     },
-    extractorEnabled: false,
+    extractorMode: "off",
     extractorTriggerEvery: 2,
     async flushPendingWrites() {
       calls.flushPendingWrites += 1;
@@ -131,7 +131,7 @@ test("memory extension injects relevant memories into the agent prompt", async (
 test("memory extension queues automatic capture and extractor on the configured turn cadence", async () => {
   const pi = createFakePi();
   const { deps, calls } = createDeps({
-    extractorEnabled: true,
+    extractorMode: "balanced",
     extractorModelId: "extractor-model",
     extractorTriggerEvery: 2,
   });
@@ -153,9 +153,29 @@ test("memory extension queues automatic capture and extractor on the configured 
   assert.equal((calls.queueLLMExtraction[0]?.model as { id: string }).id, "extractor-model");
 });
 
+test("memory extension can run extractor every turn in proactive setups", async () => {
+  const pi = createFakePi();
+  const { deps, calls } = createDeps({
+    extractorMode: "proactive",
+    extractorModelId: "extractor-model",
+    extractorTriggerEvery: 1,
+  });
+
+  createMemoryExtension(deps)(pi as never);
+
+  const handler = pi.hooks.get("input");
+  assert.ok(handler);
+
+  const ctx = createCtx();
+  await handler!({ source: "user", text: "I usually prefer concise examples." }, ctx);
+  await handler!({ source: "user", text: "Use TypeScript by default." }, ctx);
+
+  assert.equal(calls.queueLLMExtraction.length, 2);
+});
+
 test("memory extension captures session transitions and flushes writes on shutdown", async () => {
   const pi = createFakePi();
-  const { deps, calls } = createDeps({ extractorEnabled: true, extractorModelId: "extractor-model" });
+  const { deps, calls } = createDeps({ extractorMode: "balanced", extractorModelId: "extractor-model" });
 
   createMemoryExtension(deps)(pi as never);
 

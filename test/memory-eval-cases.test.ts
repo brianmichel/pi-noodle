@@ -19,11 +19,6 @@ type MemoryEvalCase = {
     shouldRetrieve: string[];
     shouldNotRetrieve?: string[];
   }>;
-  forget?: Array<{
-    command: string;
-    laterQuery: string;
-    shouldNotRetrieve: string[];
-  }>;
 };
 
 async function createService(): Promise<{ service: MemoryService; close: () => void }> {
@@ -48,7 +43,7 @@ function texts(records: MemoryRecord[]): string[] {
 
 const CASES: MemoryEvalCase[] = [
   {
-    name: "captures explicit preference and retrieves it later",
+    name: "captures explicit remember requests and retrieves them later",
     messages: ["Remember that I prefer concise TypeScript examples."],
     expectedSaved: ["I prefer concise TypeScript examples"],
     queries: [
@@ -59,163 +54,19 @@ const CASES: MemoryEvalCase[] = [
     ],
   },
   {
-    name: "captures identity and retrieves it later",
-    messages: ["My name is Brian."],
-    expectedSaved: ["Call user Brian"],
-    queries: [
-      {
-        query: "What should you call me?",
-        shouldRetrieve: ["Brian"],
-      },
-    ],
+    name: "does not heuristically capture implicit preferences anymore",
+    messages: ["I usually prefer concise TypeScript examples."],
+    expectedNotSaved: ["concise TypeScript examples"],
   },
   {
-    name: "captures project decisions and retrieves them for repo questions",
-    messages: [
-      "We're using Turso for our vector search.",
-      "We're using Turso for our vector search.",
-      "We're using Turso for our vector search.",
-    ],
-    expectedSaved: ["Team uses Turso"],
-    queries: [
-      {
-        query: "How should I implement memory search in this repo?",
-        shouldRetrieve: ["Turso"],
-      },
-      {
-        query: "What is the capital of France?",
-        shouldNotRetrieve: ["Turso"],
-        shouldRetrieve: [],
-      },
-    ],
-  },
-  {
-    name: "does not capture temporary instructions",
-    messages: ["For this task, be extra verbose."],
+    name: "does not capture temporary instructions even when phrased as remember",
+    messages: ["Remember that for this task, be extra verbose."],
     expectedNotSaved: ["extra verbose"],
   },
   {
     name: "does not capture sensitive content",
-    messages: ["My API key is sk-abc123"],
+    messages: ["Remember this API key sk-abc123"],
     expectedNotSaved: ["sk-abc123", "API key"],
-  },
-  {
-    name: "promotes repeated implicit preferences and supports forgetting them",
-    messages: [
-      "Use Go by default for small daemons.",
-      "Use Go by default for small daemons.",
-      "Use Go by default for small daemons.",
-    ],
-    expectedSaved: ["Default to Go"],
-    queries: [
-      {
-        query: "What language should I use for daemon code?",
-        shouldRetrieve: ["Go"],
-      },
-    ],
-    forget: [
-      {
-        command: "Forget that I prefer Go.",
-        laterQuery: "What language should I use for daemon code?",
-        shouldNotRetrieve: ["Go"],
-      },
-    ],
-  },
-  {
-    name: "captures softer habitual preferences after reinforcement",
-    messages: [
-      "I usually prefer concise TypeScript examples.",
-      "I usually prefer concise TypeScript examples.",
-    ],
-    expectedSaved: ["User prefers concise TypeScript examples"],
-    queries: [
-      {
-        query: "How should you format examples for me?",
-        shouldRetrieve: ["concise TypeScript examples"],
-      },
-    ],
-  },
-  {
-    name: "captures negative preferences quickly",
-    messages: ["Please don't use heavy frameworks for small daemons."],
-    expectedSaved: ["heavy frameworks"],
-    queries: [
-      {
-        query: "How should I build a small daemon?",
-        shouldRetrieve: ["heavy frameworks"],
-      },
-    ],
-  },
-  {
-    name: "captures workflow defaults after reinforcement",
-    messages: [
-      "I normally use bun for small scripts.",
-      "I normally use bun for small scripts.",
-    ],
-    expectedSaved: ["User normally uses bun for small scripts"],
-    queries: [
-      {
-        query: "What do I normally use for small scripts?",
-        shouldRetrieve: ["bun"],
-      },
-    ],
-  },
-  {
-    name: "captures project standards immediately",
-    messages: ["We standardize on TypeScript for backend services."],
-    expectedSaved: ["Team uses TypeScript for backend services"],
-    queries: [
-      {
-        query: "What should our backend stack use?",
-        shouldRetrieve: ["TypeScript"],
-      },
-    ],
-  },
-  {
-    name: "captures explicit stack descriptions",
-    messages: ["Our stack is Postgres, Bun, and TypeScript."],
-    expectedSaved: ["Team uses Postgres, Bun, and TypeScript"],
-    queries: [
-      {
-        query: "What stack does this project use?",
-        shouldRetrieve: ["Postgres", "TypeScript"],
-      },
-    ],
-  },
-  {
-    name: "captures project defaults after reinforcement",
-    messages: [
-      "For most projects, I prefer Go for small daemons.",
-      "For most projects, I prefer Go for small daemons.",
-    ],
-    expectedSaved: ["Default to Go for small daemons"],
-    queries: [
-      {
-        query: "What language should I pick for a small crossplatform daemon?",
-        shouldRetrieve: ["Go"],
-      },
-    ],
-  },
-  {
-    name: "still rejects temporary soft preferences",
-    messages: ["For this task, I usually prefer very verbose explanations."],
-    expectedNotSaved: ["very verbose explanations"],
-  },
-  {
-    name: "still rejects sensitive content hidden in preference phrasing",
-    messages: ["I usually use this API key sk-secret-123 for debugging."],
-    expectedNotSaved: ["sk-secret-123"],
-  },
-  {
-    name: "captures avoid-language preference for coding context",
-    messages: ["Avoid Python for backend services."],
-    expectedSaved: ["Python"],
-    queries: [
-      {
-        query: "Avoid Python for backend services",
-        shouldRetrieve: ["Python"],
-      },
-    ],
   },
 ];
 
@@ -252,22 +103,6 @@ for (const evalCase of CASES) {
             retrievedTexts.every((text) => !text.toLowerCase().includes(blocked.toLowerCase())),
             `expected query not to retrieve ${blocked}, got: ${retrievedTexts.join(" | ")}`,
           );
-        }
-      }
-
-      for (const forgetCase of evalCase.forget ?? []) {
-        const beforeForget = await service.findRelevantMemories(forgetCase.laterQuery, 5);
-        const target = beforeForget.find((record) =>
-          forgetCase.shouldNotRetrieve.some((blocked) => record.text.toLowerCase().includes(blocked.toLowerCase())),
-        );
-
-        assert.ok(target?.id, `expected a deletable memory for command: ${forgetCase.command}`);
-        await service.delete(target!.id!);
-
-        const afterForget = await service.findRelevantMemories(forgetCase.laterQuery, 5);
-        const afterTexts = texts(afterForget);
-        for (const blocked of forgetCase.shouldNotRetrieve) {
-          assert.ok(afterTexts.every((text) => !text.toLowerCase().includes(blocked.toLowerCase())));
         }
       }
     } finally {

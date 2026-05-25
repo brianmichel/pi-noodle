@@ -15,7 +15,7 @@ import { extractMemoriesFromMessages } from "./extractor.ts";
 import {
   buildSignalKey,
   categoriesForPrompt,
-  evaluateCandidatePromotion,
+  evaluateCandidateDecision,
   prefilterUserMessage,
   shouldRetrieveMemories,
 } from "./policy.ts";
@@ -29,14 +29,17 @@ import type {
   MemoryScope,
   UpdateMemoryInput,
 } from "./types.ts";
+import type { NoodleExtractorMode } from "../types.ts";
 
 export class MemoryService {
   private readonly localSignals = new Map<string, LocalSignal>();
   private readonly recentlySaved = new Set<string>();
   private readonly backend: MemoryBackend;
+  private readonly extractorMode: NoodleExtractorMode;
 
-  constructor(backend: MemoryBackend) {
+  constructor(backend: MemoryBackend, options?: { extractorMode?: NoodleExtractorMode }) {
     this.backend = backend;
+    this.extractorMode = options?.extractorMode ?? "balanced";
   }
 
   add(input: AddMemoryInput): Promise<void> {
@@ -94,44 +97,12 @@ export class MemoryService {
     let queued = false;
 
     for (const candidate of prefilter.candidates) {
-      const signal = this.recordCandidateEvidence(candidate);
-      const decision = evaluateCandidatePromotion(candidate, signal);
-
-      if (this.recentlySaved.has(signal.key) || !decision.shouldPromote) {
-        continue;
-      }
-
-      queued = true;
-      this.recentlySaved.add(signal.key);
-      enqueueWriteTask({
+      if (this.handleCandidate(candidate, {
         label: "Memory automatic capture",
         ...(target ? { target } : {}),
-        task: async () => {
-          const result = await this.promoteSignal(signal, decision.score, decision.reasons, {
-            category: candidate.category,
-            categories: [candidate.category],
-            durability: candidate.durability,
-            confidence: signal.strongestConfidence,
-            source: signal.count >= 2 && !candidate.explicit ? "repetition" : candidate.source,
-            signal_count: signal.count,
-            trigger_reasons: signal.reasons,
-            promotion_score: decision.score,
-            promotion_reasons: decision.reasons,
-            assistant_id: DEFAULT_AGENT_ID,
-            auto_saved: true,
-            ...signal.metadata,
-          });
-          if (result === "saved" || result === "merged") {
-            signal.promotedAt = Date.now();
-            signal.lastPromotionScore = decision.score;
-          } else {
-            this.recentlySaved.delete(signal.key);
-          }
-        },
-        onFailure: () => {
-          this.recentlySaved.delete(signal.key);
-        },
-      });
+      })) {
+        queued = true;
+      }
     }
 
     return queued;
@@ -214,32 +185,23 @@ export class MemoryService {
             reasons: [extracted.reason],
             metadata: {
               trigger: extracted.reason,
+              stability: extracted.stability,
+              sensitivity: extracted.sensitivity,
+              suggested_action: extracted.suggestedAction,
             },
           };
 
-          const signal = this.recordCandidateEvidence(candidate, { countIncrement: extracted.confidence >= 0.85 ? 2 : 1 });
-          const decision = evaluateCandidatePromotion(candidate, signal);
-          if (!decision.shouldPromote) continue;
-
-          const result = await this.promoteSignal(signal, decision.score, decision.reasons, {
-            category: candidate.category,
-            categories: [candidate.category],
-            durability: candidate.durability,
-            confidence: signal.strongestConfidence,
-            source: "llm_extracted",
-            signal_count: signal.count,
-            trigger_reasons: signal.reasons,
-            promotion_score: decision.score,
-            promotion_reasons: decision.reasons,
-            assistant_id: DEFAULT_AGENT_ID,
-            auto_saved: true,
-            extractor_reinforced: true,
-            ...signal.metadata,
+          this.handleCandidate(candidate, {
+            countIncrement: extracted.confidence >= 0.85 ? 2 : 1,
+            label: "Memory LLM extraction",
+            ...(target ? { target } : {}),
+            extraMetadata: {
+              extractor_reinforced: true,
+              extractor_stability: extracted.stability,
+              extractor_sensitivity: extracted.sensitivity,
+              extractor_suggested_action: extracted.suggestedAction,
+            },
           });
-          if (result === "saved" || result === "merged") {
-            signal.promotedAt = Date.now();
-            signal.lastPromotionScore = decision.score;
-          }
         }
       },
     });
@@ -261,12 +223,14 @@ export class MemoryService {
     });
   }
 
+  // Pending candidates stay review-only in v1 so retrieval quality is based on
+  // committed memories, not speculative first-pass inferences.
   listPendingCandidates(): Array<LocalSignal & { score: number; promotionReasons: string[] }> {
     return Array.from(this.localSignals.values())
-      .filter((signal) => !signal.promotedAt)
+      .filter((signal) => !signal.promotedAt && signal.lastDecisionAction === "pending")
       .map((signal) => {
         const candidate = signalToCandidate(signal);
-        const decision = evaluateCandidatePromotion(candidate, signal);
+        const decision = evaluateCandidateDecision(candidate, signal, this.extractorMode);
         return {
           ...signal,
           score: decision.score,
@@ -279,7 +243,7 @@ export class MemoryService {
 
   dismissPendingCandidate(key: string): boolean {
     const signal = this.localSignals.get(key);
-    if (!signal || signal.promotedAt) return false;
+    if (!signal || signal.promotedAt || signal.lastDecisionAction !== "pending") return false;
     this.localSignals.delete(key);
     return true;
   }
@@ -318,6 +282,68 @@ export class MemoryService {
       ...(categories ? { categories } : {}),
     });
     return "saved";
+  }
+
+  // Heuristic and LLM candidates share one promotion pipeline so settings,
+  // dedupe, metadata, and policy decisions stay consistent across sources.
+  private handleCandidate(
+    candidate: MemoryCandidate,
+    options?: {
+      countIncrement?: number;
+      target?: NotificationTarget;
+      label?: string;
+      extraMetadata?: JsonObject;
+    },
+  ): boolean {
+    const signal = this.recordCandidateEvidence(
+      candidate,
+      options?.countIncrement !== undefined ? { countIncrement: options.countIncrement } : undefined,
+    );
+    const decision = evaluateCandidateDecision(candidate, signal, this.extractorMode);
+    signal.lastDecisionAction = decision.action;
+
+    if (decision.action !== "save") {
+      return false;
+    }
+    if (this.recentlySaved.has(signal.key)) {
+      return false;
+    }
+
+    this.recentlySaved.add(signal.key);
+    enqueueWriteTask({
+      label: options?.label ?? "Memory candidate promotion",
+      ...(options?.target ? { target: options.target } : {}),
+      task: async () => {
+        const result = await this.promoteSignal(signal, decision.score, decision.reasons, {
+          category: candidate.category,
+          categories: [candidate.category],
+          durability: candidate.durability,
+          confidence: signal.strongestConfidence,
+          source: signal.count >= 2 && !candidate.explicit ? "repetition" : candidate.source,
+          signal_count: signal.count,
+          trigger_reasons: signal.reasons,
+          promotion_score: decision.score,
+          promotion_reasons: decision.reasons,
+          assistant_id: DEFAULT_AGENT_ID,
+          auto_saved: true,
+          extractor_mode: this.extractorMode,
+          ...signal.metadata,
+          ...options?.extraMetadata,
+        });
+        if (result === "saved" || result === "merged") {
+          signal.promotedAt = Date.now();
+          signal.lastPromotionScore = decision.score;
+          signal.lastDecisionAction = "save";
+        } else {
+          this.recentlySaved.delete(signal.key);
+        }
+      },
+      onFailure: () => {
+        this.recentlySaved.delete(signal.key);
+      },
+    });
+
+    return true;
   }
 
   private recordCandidateEvidence(candidate: MemoryCandidate, options?: { countIncrement?: number }): LocalSignal {

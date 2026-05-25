@@ -3,7 +3,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import { registerCommands as registerCommandsRuntime } from "./commands.ts";
 import {
-  extractorEnabled as runtimeExtractorEnabled,
+  extractorMode as runtimeExtractorMode,
   extractorModelId as runtimeExtractorModelId,
   extractorTriggerEvery as runtimeExtractorTriggerEvery,
   memoryService as runtimeMemoryService,
@@ -11,7 +11,7 @@ import {
 import type { MemoryRecord } from "./memory/types.ts";
 import { flushPendingWrites as flushPendingWritesRuntime } from "./session.ts";
 import { memoryTools as runtimeMemoryTools } from "./tools.ts";
-import type { NotificationTarget, SessionManagerLike } from "./types.ts";
+import type { NotificationTarget, SessionManagerLike, NoodleExtractorMode } from "./types.ts";
 
 type RegisteredTool = Parameters<ExtensionAPI["registerTool"]>[0];
 
@@ -30,7 +30,7 @@ type MemoryServiceLike = {
 
 export type MemoryExtensionDeps = {
   memoryService: MemoryServiceLike;
-  extractorEnabled: boolean;
+  extractorMode: NoodleExtractorMode;
   extractorModelId?: string;
   extractorTriggerEvery: number;
   flushPendingWrites: () => Promise<void>;
@@ -40,7 +40,7 @@ export type MemoryExtensionDeps = {
 
 const runtimeDeps: MemoryExtensionDeps = {
   memoryService: runtimeMemoryService,
-  extractorEnabled: runtimeExtractorEnabled,
+  extractorMode: runtimeExtractorMode,
   ...(runtimeExtractorModelId ? { extractorModelId: runtimeExtractorModelId } : {}),
   extractorTriggerEvery: runtimeExtractorTriggerEvery,
   flushPendingWrites: flushPendingWritesRuntime,
@@ -59,7 +59,7 @@ export function createMemoryExtension(deps: MemoryExtensionDeps = runtimeDeps) {
       sessionMessageCount++;
       deps.memoryService.queueAutomaticCapture(event.text, ctx);
 
-      if (deps.extractorEnabled && sessionMessageCount % deps.extractorTriggerEvery === 0) {
+      if (deps.extractorMode !== "off" && sessionMessageCount % deps.extractorTriggerEvery === 0) {
         const model =
           ctx.modelRegistry.getAll().find((m) => m.id === deps.extractorModelId) ??
           ctx.model;
@@ -113,7 +113,7 @@ export function createMemoryExtension(deps: MemoryExtensionDeps = runtimeDeps) {
           savedSessionSignatures,
         ).catch(() => undefined);
 
-        if (deps.extractorEnabled) {
+        if (deps.extractorMode !== "off") {
           const model = deps.extractorModelId
             ? ctx.modelRegistry.getAll().find((m) => m.id === deps.extractorModelId)
             : ctx.model;
