@@ -59,12 +59,10 @@ export const memoryService = new MemoryService(createBackend(config), {
   extractorMode: config.extractor?.mode ?? DEFAULT_EXTRACTOR_MODE,
 });
 
-export const EXTRACTOR_DEFAULT_MODEL = "deepseek/deepseek-v4-flash:free";
-
 /** Behavior profile for proactive extraction. */
 export const extractorMode = config.extractor?.mode ?? DEFAULT_EXTRACTOR_MODE;
-/** Model ID to use for extraction; falls back to the default free model when unset. */
-export const extractorModelId = config.extractor?.model ?? EXTRACTOR_DEFAULT_MODEL;
+/** Model ID to use for extraction. Extraction is skipped when unset. */
+export const extractorModelId = config.extractor?.model ?? undefined;
 /** How many user turns trigger an extraction pass. */
 export const extractorTriggerEvery = config.extractor?.triggerEvery ?? defaultExtractorTriggerEvery(extractorMode === "off" ? DEFAULT_EXTRACTOR_MODE : extractorMode);
 /** Whether to show the extractor debug widget in Pi. */

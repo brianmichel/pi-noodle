@@ -1,5 +1,5 @@
-import { completeSimple } from "@earendil-works/pi-ai";
-import type { Api, Model } from "@earendil-works/pi-ai";
+import { complete } from "@earendil-works/pi-ai";
+import type { Api, Model, Message } from "@earendil-works/pi-ai";
 
 import type {
   ExtractionCandidate,
@@ -98,6 +98,7 @@ function parseJsonArray(content: string): unknown[] {
 export async function extractMemoriesFromMessages(
   messages: MemoryMessage[],
   model: Model<Api>,
+  options?: { apiKey?: string; headers?: Record<string, string>; signal?: AbortSignal },
 ): Promise<ExtractionCandidate[]> {
   if (messages.length === 0) return [];
 
@@ -105,18 +106,28 @@ export async function extractMemoriesFromMessages(
     .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
     .join("\n\n");
 
-  const result = await completeSimple(model, {
+  const userMessage: Message = {
+    role: "user",
+    content: [{
+      type: "text",
+      text: `Extract memorable facts from this conversation:\n\n${conversationText}`,
+    }],
+    timestamp: Date.now(),
+  };
+
+  // Use complete() rather than completeSimple() so we can pass the API key
+  // and headers resolved from ctx.modelRegistry.getApiKeyAndHeaders().
+  // completeSimple() accepts options but doesn't get auth from the model
+  // registry — it only checks env vars, which misses SSO/OAuth setups.
+  const result = await complete(model, {
     systemPrompt: SYSTEM_PROMPT,
-    messages: [
-      {
-        role: "user",
-        content: `Extract memorable facts from this conversation:\n\n${conversationText}`,
-        timestamp: Date.now(),
-      },
-    ],
+    messages: [userMessage],
   }, {
     temperature: 0,
     maxTokens: 1000,
+    ...(options?.apiKey ? { apiKey: options.apiKey } : {}),
+    ...(options?.headers ? { headers: options.headers } : {}),
+    ...(options?.signal ? { signal: options.signal } : {}),
   });
 
   const content = result.content
@@ -127,6 +138,7 @@ export async function extractMemoriesFromMessages(
   if (!content) return [];
 
   const raw = parseJsonArray(content);
+
   return raw
     .filter(isValidCandidate)
     .map((c) => ({

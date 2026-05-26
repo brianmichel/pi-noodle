@@ -25,7 +25,12 @@ type RegisteredTool = Parameters<ExtensionAPI["registerTool"]>[0];
 
 type MemoryServiceLike = {
   queueAutomaticCapture: (text: string, target?: NotificationTarget) => boolean;
-  queueLLMExtraction: (sessionManager: SessionManagerLike, model: Model<Api> | undefined, target?: NotificationTarget) => boolean;
+  queueLLMExtraction: (
+    sessionManager: SessionManagerLike,
+    model: Model<Api> | undefined,
+    target?: NotificationTarget,
+    extractionOptions?: { apiKey?: string; headers?: Record<string, string> },
+  ) => boolean;
   queueConsolidation: (target?: NotificationTarget) => void;
   captureSessionConversation: (
     sessionManager: SessionManagerLike,
@@ -46,6 +51,29 @@ export type MemoryExtensionDeps = {
   memoryTools: readonly RegisteredTool[];
   registerCommands: (pi: ExtensionAPI) => void;
 };
+
+type ExtractorModelRegistry = {
+  getAll(): Model<Api>[];
+  getApiKeyAndHeaders(model: Model<Api>): Promise<{ ok: boolean; apiKey?: string; headers?: Record<string, string>; error?: string }>;
+};
+
+/** Looks up the configured extractor model in the registry and resolves its API key.
+ *  Returns null when no model is configured, not found, or has no usable auth.
+ *  Logs "not found" via the debug overlay so the handler only deals with context checks. */
+async function resolveExtractorModel(
+  extractorModelId: string | undefined,
+  modelRegistry: ExtractorModelRegistry,
+): Promise<{ model: Model<Api>; apiKey: string; headers?: Record<string, string> } | null> {
+  if (!extractorModelId) return null;
+  const model = modelRegistry.getAll().find((m) => m.id === extractorModelId);
+  if (!model) {
+    noteExtractorSkipped(`extractor model "${extractorModelId}" not found in registry`);
+    return null;
+  }
+  const auth = await modelRegistry.getApiKeyAndHeaders(model);
+  if (!auth?.ok || !auth.apiKey) return null;
+  return { model, apiKey: auth.apiKey, ...(auth.headers ? { headers: auth.headers } : {}) };
+}
 
 const runtimeDeps: MemoryExtensionDeps = {
   memoryService: runtimeMemoryService,
@@ -77,12 +105,17 @@ export function createMemoryExtension(deps: MemoryExtensionDeps = runtimeDeps) {
       deps.memoryService.queueAutomaticCapture(event.text, ctx);
 
       if (deps.extractorMode !== "off" && sessionMessageCount % deps.extractorTriggerEvery === 0) {
-        const model =
-          ctx.modelRegistry.getAll().find((m) => m.id === deps.extractorModelId) ??
-          ctx.model;
-        noteExtractorQueued("scheduled", model?.id);
-        const queued = deps.memoryService.queueLLMExtraction(ctx.sessionManager, model, ctx);
-        if (!queued) noteExtractorSkipped("not enough memory-worthy context yet");
+        const resolved = await resolveExtractorModel(deps.extractorModelId, ctx.modelRegistry);
+        if (resolved) {
+          noteExtractorQueued("scheduled", resolved.model.id);
+          const queued = deps.memoryService.queueLLMExtraction(
+            ctx.sessionManager,
+            resolved.model,
+            ctx,
+            { apiKey: resolved.apiKey, ...(resolved.headers ? { headers: resolved.headers } : {}) },
+          );
+          if (!queued) noteExtractorSkipped("not enough memory-worthy context yet");
+        }
       }
 
       return { action: "continue" };
@@ -133,12 +166,17 @@ export function createMemoryExtension(deps: MemoryExtensionDeps = runtimeDeps) {
         ).catch(() => undefined);
 
         if (deps.extractorMode !== "off") {
-          const model = deps.extractorModelId
-            ? ctx.modelRegistry.getAll().find((m) => m.id === deps.extractorModelId)
-            : ctx.model;
-          noteExtractorQueued(`shutdown:${event.reason}`, model?.id);
-          const queued = deps.memoryService.queueLLMExtraction(ctx.sessionManager, model);
-          if (!queued) noteExtractorSkipped("shutdown run skipped: not enough memory-worthy context yet");
+          const resolved = await resolveExtractorModel(deps.extractorModelId, ctx.modelRegistry);
+          if (resolved) {
+            noteExtractorQueued(`shutdown:${event.reason}`, resolved.model.id);
+            const queued = deps.memoryService.queueLLMExtraction(
+              ctx.sessionManager,
+              resolved.model,
+              undefined,
+              { apiKey: resolved.apiKey, ...(resolved.headers ? { headers: resolved.headers } : {}) },
+            );
+            if (!queued) noteExtractorSkipped("shutdown run skipped: not enough memory-worthy context yet");
+          }
         }
 
         deps.memoryService.queueConsolidation();

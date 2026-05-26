@@ -165,6 +165,7 @@ export class MemoryService {
     sessionManager: SessionManagerLike,
     model: Model<Api> | undefined,
     target?: NotificationTarget,
+    extractionOptions?: { apiKey?: string; headers?: Record<string, string> },
   ): boolean {
     if (!model) return false;
 
@@ -179,7 +180,10 @@ export class MemoryService {
       },
       task: async () => {
         noteExtractorRunStarted();
-        const candidates = await extractMemoriesFromMessages(messages, model);
+        const candidates = await extractMemoriesFromMessages(messages, model, {
+          ...(extractionOptions?.apiKey ? { apiKey: extractionOptions.apiKey } : {}),
+          ...(extractionOptions?.headers ? { headers: extractionOptions.headers } : {}),
+        });
         let savedCount = 0;
         const extractedTexts: string[] = [];
 

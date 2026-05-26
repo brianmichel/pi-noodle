@@ -12,7 +12,6 @@ import {
 } from "@earendil-works/pi-tui";
 
 import { DEFAULT_EXTRACTOR_MODE, defaultExtractorTriggerEvery, resolveConfigPath } from "./config.ts";
-import { EXTRACTOR_DEFAULT_MODEL } from "./memory/runtime.ts";
 import type { NoodleConfig, NoodleConfigPartial, NoodleExtractorMode } from "./types.ts";
 
 type DoneFn<T> = (result: T) => void;
@@ -523,7 +522,7 @@ function createDraft(config: NoodleConfig): DraftConfig {
     embeddingBaseUrl: config.embedding.baseUrl,
     embeddingModel: config.embedding.model,
     extractorMode: config.extractor?.mode ?? "off",
-    extractorModel: config.extractor?.model ?? EXTRACTOR_DEFAULT_MODEL,
+    extractorModel: config.extractor?.model ?? "",
     extractorTriggerEvery: String(config.extractor?.triggerEvery ?? defaultExtractorTriggerEvery(config.extractor?.mode ?? DEFAULT_EXTRACTOR_MODE)),
     extractorDebug: config.extractor?.debug ?? false,
   };
@@ -554,7 +553,7 @@ function applyProviderDefaults(draft: DraftConfig): void {
   }
 
   if (!draft.dbUrl) draft.dbUrl = "libsql://";
-  if (!draft.extractorModel) draft.extractorModel = EXTRACTOR_DEFAULT_MODEL;
+  if (!draft.extractorModel) draft.extractorModel = "";
   if (!draft.extractorTriggerEvery) {
     draft.extractorTriggerEvery = String(defaultExtractorTriggerEvery(draft.extractorMode ?? DEFAULT_EXTRACTOR_MODE));
   }
@@ -619,7 +618,7 @@ function toPartial(draft: DraftConfig): NoodleConfigPartial {
     extractor: draft.extractorMode !== "off"
       ? {
           mode: draft.extractorMode,
-          model: draft.extractorModel.trim() || EXTRACTOR_DEFAULT_MODEL,
+          ...(draft.extractorModel.trim() ? { model: draft.extractorModel.trim() } : {}),
           triggerEvery: parseInt(draft.extractorTriggerEvery.trim(), 10) || defaultExtractorTriggerEvery(draft.extractorMode),
           debug: draft.extractorDebug,
         }
@@ -644,8 +643,8 @@ function buildSummary(draft: DraftConfig): string[] {
   return [
     `Database: ${draft.dbMode}  ${draft.dbMode === "cloud" ? draft.dbUrl.trim() : draft.dbPath.trim()}`,
     `Embedding: ${draft.embeddingProvider}  ${draft.embeddingModel.trim() || draft.embeddingBaseUrl.trim()}`,
-    draft.extractorMode !== "off"
-      ? `Memory mode: ${draft.extractorMode}  ${draft.extractorModel.trim() || EXTRACTOR_DEFAULT_MODEL}  every ${parseInt(draft.extractorTriggerEvery.trim(), 10) || defaultExtractorTriggerEvery(draft.extractorMode)} turns  debug ${draft.extractorDebug ? "on" : "off"}`
+    draft.extractorMode !== "off" && draft.extractorModel.trim()
+      ? `Memory mode: ${draft.extractorMode}  ${draft.extractorModel.trim()}  every ${parseInt(draft.extractorTriggerEvery.trim(), 10) || defaultExtractorTriggerEvery(draft.extractorMode)} turns  debug ${draft.extractorDebug ? "on" : "off"}`
       : "Memory mode: off",
   ];
 }

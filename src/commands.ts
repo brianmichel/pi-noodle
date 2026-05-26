@@ -2,7 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import { resolveConfig, resolveConfigPath, writeConfig } from "./config.ts";
 import { runConfigScreen } from "./config-screen.ts";
-import { EXTRACTOR_DEFAULT_MODEL, memoryService } from "./memory/runtime.ts";
+import { memoryService } from "./memory/runtime.ts";
 import type { MemoryRecord } from "./memory/types.ts";
 import { maskSecret } from "./utils.ts";
 import {
@@ -154,7 +154,7 @@ export function registerCommands(pi: ExtensionAPI): void {
       ctx.ui.notify(`API key: ${maskSecret(config.embedding.apiKey)}`, "info");
       const ec = config.extractor;
       if ((ec?.mode ?? "off") !== "off") {
-        const modelLabel = ec?.model ?? EXTRACTOR_DEFAULT_MODEL;
+        const modelLabel = ec?.model ?? "(none — extraction disabled)";
         ctx.ui.notify(
           `Memory mode: ${ec?.mode ?? "balanced"}  ${modelLabel}  every ${ec?.triggerEvery ?? 10} turns  debug ${ec?.debug ? "on" : "off"}`,
           "info",
@@ -403,8 +403,8 @@ async function collectExtractor(
   if (mode === "off") return null;
 
   const modelInput = await ui.input(
-    "Model ID to use (leave blank for default)",
-    EXTRACTOR_DEFAULT_MODEL,
+    "Model ID to use for extraction (leave blank to disable extraction)",
+    "",
   );
   const model = modelInput?.trim() || undefined;
 
