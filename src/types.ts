@@ -19,6 +19,8 @@ export type NoodleExtractorConfig = {
   model?: string;
   /** Number of user turns between automatic extraction runs. Defaults by mode when unset. */
   triggerEvery?: number;
+  /** Show the extractor debug widget in Pi while developing. */
+  debug?: boolean;
 };
 
 export type NoodleConfig = {

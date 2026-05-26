@@ -3,6 +3,14 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import { registerCommands as registerCommandsRuntime } from "./commands.ts";
 import {
+  configureExtractorDebug,
+  maybeStartExtractorDebugOverlay,
+  noteExtractorQueued,
+  noteExtractorSkipped,
+  noteUserTurnForExtractorDebug,
+} from "./debug-overlay.ts";
+import {
+  extractorDebug as runtimeExtractorDebug,
   extractorMode as runtimeExtractorMode,
   extractorModelId as runtimeExtractorModelId,
   extractorTriggerEvery as runtimeExtractorTriggerEvery,
@@ -33,6 +41,7 @@ export type MemoryExtensionDeps = {
   extractorMode: NoodleExtractorMode;
   extractorModelId?: string;
   extractorTriggerEvery: number;
+  extractorDebug?: boolean;
   flushPendingWrites: () => Promise<void>;
   memoryTools: readonly RegisteredTool[];
   registerCommands: (pi: ExtensionAPI) => void;
@@ -43,6 +52,7 @@ const runtimeDeps: MemoryExtensionDeps = {
   extractorMode: runtimeExtractorMode,
   ...(runtimeExtractorModelId ? { extractorModelId: runtimeExtractorModelId } : {}),
   extractorTriggerEvery: runtimeExtractorTriggerEvery,
+  extractorDebug: runtimeExtractorDebug,
   flushPendingWrites: flushPendingWritesRuntime,
   memoryTools: runtimeMemoryTools,
   registerCommands: registerCommandsRuntime,
@@ -53,17 +63,26 @@ export function createMemoryExtension(deps: MemoryExtensionDeps = runtimeDeps) {
     const savedSessionSignatures = new Set<string>();
     let sessionMessageCount = 0;
 
+    configureExtractorDebug(deps.extractorDebug ?? false, deps.extractorMode, deps.extractorTriggerEvery);
+
+    pi.on("session_start", async (_event, ctx) => {
+      maybeStartExtractorDebugOverlay(ctx);
+    });
+
     pi.on("input", async (event, ctx) => {
       if (event.source === "extension") return { action: "continue" };
 
       sessionMessageCount++;
+      noteUserTurnForExtractorDebug();
       deps.memoryService.queueAutomaticCapture(event.text, ctx);
 
       if (deps.extractorMode !== "off" && sessionMessageCount % deps.extractorTriggerEvery === 0) {
         const model =
           ctx.modelRegistry.getAll().find((m) => m.id === deps.extractorModelId) ??
           ctx.model;
-        deps.memoryService.queueLLMExtraction(ctx.sessionManager, model, ctx);
+        noteExtractorQueued("scheduled", model?.id);
+        const queued = deps.memoryService.queueLLMExtraction(ctx.sessionManager, model, ctx);
+        if (!queued) noteExtractorSkipped("not enough memory-worthy context yet");
       }
 
       return { action: "continue" };
@@ -117,7 +136,9 @@ export function createMemoryExtension(deps: MemoryExtensionDeps = runtimeDeps) {
           const model = deps.extractorModelId
             ? ctx.modelRegistry.getAll().find((m) => m.id === deps.extractorModelId)
             : ctx.model;
-          deps.memoryService.queueLLMExtraction(ctx.sessionManager, model);
+          noteExtractorQueued(`shutdown:${event.reason}`, model?.id);
+          const queued = deps.memoryService.queueLLMExtraction(ctx.sessionManager, model);
+          if (!queued) noteExtractorSkipped("shutdown run skipped: not enough memory-worthy context yet");
         }
 
         deps.memoryService.queueConsolidation();

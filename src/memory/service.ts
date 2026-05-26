@@ -1,6 +1,11 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 
 import { DEFAULT_AGENT_ID } from "../constants.ts";
+import {
+  noteExtractorRunFailed,
+  noteExtractorRunFinished,
+  noteExtractorRunStarted,
+} from "../debug-overlay.ts";
 import { enqueueWriteTask } from "../queue.ts";
 import {
   buildSessionSignature,
@@ -169,10 +174,18 @@ export class MemoryService {
     enqueueWriteTask({
       label: "Memory LLM extraction",
       ...(target ? { target } : {}),
+      onFailure: () => {
+        noteExtractorRunFailed("LLM extraction failed");
+      },
       task: async () => {
+        noteExtractorRunStarted();
         const candidates = await extractMemoriesFromMessages(messages, model);
+        let savedCount = 0;
+        const extractedTexts: string[] = [];
+
         for (const extracted of candidates) {
           if (extracted.confidence < 0.58) continue;
+          extractedTexts.push(extracted.text);
 
           const candidate: MemoryCandidate = {
             text: extracted.text,
@@ -191,7 +204,7 @@ export class MemoryService {
             },
           };
 
-          this.handleCandidate(candidate, {
+          if (this.handleCandidate(candidate, {
             countIncrement: extracted.confidence >= 0.85 ? 2 : 1,
             label: "Memory LLM extraction",
             ...(target ? { target } : {}),
@@ -201,8 +214,12 @@ export class MemoryService {
               extractor_sensitivity: extracted.sensitivity,
               extractor_suggested_action: extracted.suggestedAction,
             },
-          });
+          })) {
+            savedCount += 1;
+          }
         }
+
+        noteExtractorRunFinished(extractedTexts, savedCount);
       },
     });
 

@@ -47,6 +47,7 @@ const DEFAULTS: NoodleConfig = {
   extractor: {
     mode: DISABLED_EXTRACTOR_MODE,
     triggerEvery: defaultExtractorTriggerEvery(DEFAULT_EXTRACTOR_MODE),
+    debug: false,
   },
 };
 
@@ -106,12 +107,17 @@ export function resolveConfig(): NoodleConfig {
       config.extractor.triggerEvery = n;
     }
   }
+  if (env["NOODLE_EXTRACTOR_DEBUG"]) {
+    if (!config.extractor) config.extractor = {};
+    config.extractor.debug = ["1", "true", "yes", "on"].includes(env["NOODLE_EXTRACTOR_DEBUG"].toLowerCase());
+  }
 
   if (config.extractor) {
     config.extractor.mode ??= DISABLED_EXTRACTOR_MODE;
     config.extractor.triggerEvery = config.extractor.triggerEvery && config.extractor.triggerEvery > 0
       ? config.extractor.triggerEvery
       : defaultExtractorTriggerEvery(config.extractor.mode === "off" ? DEFAULT_EXTRACTOR_MODE : config.extractor.mode);
+    config.extractor.debug ??= false;
   }
 
   return config;

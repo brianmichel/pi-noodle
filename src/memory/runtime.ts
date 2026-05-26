@@ -67,3 +67,5 @@ export const extractorMode = config.extractor?.mode ?? DEFAULT_EXTRACTOR_MODE;
 export const extractorModelId = config.extractor?.model ?? EXTRACTOR_DEFAULT_MODEL;
 /** How many user turns trigger an extraction pass. */
 export const extractorTriggerEvery = config.extractor?.triggerEvery ?? defaultExtractorTriggerEvery(extractorMode === "off" ? DEFAULT_EXTRACTOR_MODE : extractorMode);
+/** Whether to show the extractor debug widget in Pi. */
+export const extractorDebug = config.extractor?.debug ?? false;

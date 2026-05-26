@@ -128,6 +128,7 @@ Env vars take priority over the config file:
 | `NOODLE_EXTRACTOR_MODE` | Memory mode: off / conservative / balanced / proactive |
 | `NOODLE_EXTRACTOR_MODEL` | Extractor model ID |
 | `NOODLE_EXTRACTOR_TRIGGER_EVERY` | Automatic extraction cadence in user turns |
+| `NOODLE_EXTRACTOR_DEBUG` | Show the extractor debug widget: true / false |
 
 ## Architecture
 

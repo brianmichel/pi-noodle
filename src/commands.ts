@@ -156,7 +156,7 @@ export function registerCommands(pi: ExtensionAPI): void {
       if ((ec?.mode ?? "off") !== "off") {
         const modelLabel = ec?.model ?? EXTRACTOR_DEFAULT_MODEL;
         ctx.ui.notify(
-          `Memory mode: ${ec?.mode ?? "balanced"}  ${modelLabel}  every ${ec?.triggerEvery ?? 10} turns`,
+          `Memory mode: ${ec?.mode ?? "balanced"}  ${modelLabel}  every ${ec?.triggerEvery ?? 10} turns  debug ${ec?.debug ? "on" : "off"}`,
           "info",
         );
       } else {
@@ -205,7 +205,7 @@ async function runSetup(ui: CtxUi): Promise<void> {
       `Embedding: ${provider}  ${embedConfig.summary}`,
     ];
     if (extractorConfig) {
-      summaryLines.push(`Memory mode: ${extractorConfig.partial.mode ?? "balanced"}  ${extractorConfig.partial.model ?? "gpt-4o-mini"}`);
+      summaryLines.push(`Memory mode: ${extractorConfig.partial.mode ?? "balanced"}  ${extractorConfig.partial.model ?? "gpt-4o-mini"}  debug ${extractorConfig.partial.debug ? "on" : "off"}`);
     } else {
       summaryLines.push("Memory mode: off");
     }
@@ -412,12 +412,18 @@ async function collectExtractor(
   const triggerInput = await ui.input(`Extract every N turns (default ${triggerDefault})`, String(triggerDefault));
   const triggerEvery = parseInt(triggerInput ?? String(triggerDefault), 10);
 
+  const debugEnabled = await ui.confirm(
+    "Show extractor debug widget?",
+    "Enable the live extractor debug widget while developing.",
+  );
+
   return {
-    summary: `${mode}  ${model ? model : "active model"}`,
+    summary: `${mode}  ${model ? model : "active model"}  debug ${debugEnabled ? "on" : "off"}`,
     partial: {
       mode,
       ...(model ? { model } : {}),
       triggerEvery: isNaN(triggerEvery) || triggerEvery < 1 ? triggerDefault : triggerEvery,
+      debug: debugEnabled,
     },
   };
 }

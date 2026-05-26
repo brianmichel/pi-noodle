@@ -50,6 +50,7 @@ type DraftConfig = {
   extractorMode: NoodleExtractorMode;
   extractorModel: string;
   extractorTriggerEvery: string;
+  extractorDebug: boolean;
 };
 
 type ConfigScreenResult =
@@ -70,6 +71,7 @@ const FIELD = {
   EXTRACTOR_MODE: "extractorMode",
   EXTRACTOR_MODEL: "extractorModel",
   EXTRACTOR_TRIGGER_EVERY: "extractorTriggerEvery",
+  EXTRACTOR_DEBUG: "extractorDebug",
 } as const;
 
 export async function runConfigScreen(
@@ -153,6 +155,9 @@ export async function runConfigScreen(
           break;
         case FIELD.EXTRACTOR_TRIGGER_EVERY:
           draft.extractorTriggerEvery = value;
+          break;
+        case FIELD.EXTRACTOR_DEBUG:
+          draft.extractorDebug = value === "on";
           break;
       }
 
@@ -384,6 +389,13 @@ function buildItems(
         theme,
         applyChange,
       ),
+      {
+        id: FIELD.EXTRACTOR_DEBUG,
+        label: "Extractor debug widget",
+        currentValue: draft.extractorDebug ? "on" : "off",
+        values: ["off", "on"],
+        description: "Show the live extractor debug widget in Pi while developing.",
+      },
     );
   }
 
@@ -493,6 +505,8 @@ function labelForField(id: string): string {
       return "Extractor model ID";
     case FIELD.EXTRACTOR_TRIGGER_EVERY:
       return "Extract every N turns";
+    case FIELD.EXTRACTOR_DEBUG:
+      return "Extractor debug widget";
     default:
       return id;
   }
@@ -511,6 +525,7 @@ function createDraft(config: NoodleConfig): DraftConfig {
     extractorMode: config.extractor?.mode ?? "off",
     extractorModel: config.extractor?.model ?? EXTRACTOR_DEFAULT_MODEL,
     extractorTriggerEvery: String(config.extractor?.triggerEvery ?? defaultExtractorTriggerEvery(config.extractor?.mode ?? DEFAULT_EXTRACTOR_MODE)),
+    extractorDebug: config.extractor?.debug ?? false,
   };
 }
 
@@ -606,6 +621,7 @@ function toPartial(draft: DraftConfig): NoodleConfigPartial {
           mode: draft.extractorMode,
           model: draft.extractorModel.trim() || EXTRACTOR_DEFAULT_MODEL,
           triggerEvery: parseInt(draft.extractorTriggerEvery.trim(), 10) || defaultExtractorTriggerEvery(draft.extractorMode),
+          debug: draft.extractorDebug,
         }
       : { mode: "off" },
   };
@@ -629,7 +645,7 @@ function buildSummary(draft: DraftConfig): string[] {
     `Database: ${draft.dbMode}  ${draft.dbMode === "cloud" ? draft.dbUrl.trim() : draft.dbPath.trim()}`,
     `Embedding: ${draft.embeddingProvider}  ${draft.embeddingModel.trim() || draft.embeddingBaseUrl.trim()}`,
     draft.extractorMode !== "off"
-      ? `Memory mode: ${draft.extractorMode}  ${draft.extractorModel.trim() || EXTRACTOR_DEFAULT_MODEL}  every ${parseInt(draft.extractorTriggerEvery.trim(), 10) || defaultExtractorTriggerEvery(draft.extractorMode)} turns`
+      ? `Memory mode: ${draft.extractorMode}  ${draft.extractorModel.trim() || EXTRACTOR_DEFAULT_MODEL}  every ${parseInt(draft.extractorTriggerEvery.trim(), 10) || defaultExtractorTriggerEvery(draft.extractorMode)} turns  debug ${draft.extractorDebug ? "on" : "off"}`
       : "Memory mode: off",
   ];
 }
