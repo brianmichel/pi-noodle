@@ -19,7 +19,7 @@ import {
 import type { MemoryRecord } from "./memory/types.ts";
 import { flushPendingWrites as flushPendingWritesRuntime } from "./session.ts";
 import { memoryTools as runtimeMemoryTools } from "./tools.ts";
-import type { NotificationTarget, SessionManagerLike, NoodleExtractorMode } from "./types.ts";
+import type { NotificationTarget, NoodleExtractorMode, SessionManagerLike } from "./types.ts";
 
 type RegisteredTool = Parameters<ExtensionAPI["registerTool"]>[0];
 
@@ -57,23 +57,10 @@ type ExtractorModelRegistry = {
   getApiKeyAndHeaders(model: Model<Api>): Promise<{ ok: boolean; apiKey?: string; headers?: Record<string, string>; error?: string }>;
 };
 
-/** Looks up the configured extractor model in the registry and resolves its API key.
- *  Returns null when no model is configured, not found, or has no usable auth.
- *  Logs "not found" via the debug overlay so the handler only deals with context checks. */
-async function resolveExtractorModel(
-  extractorModelId: string | undefined,
-  modelRegistry: ExtractorModelRegistry,
-): Promise<{ model: Model<Api>; apiKey: string; headers?: Record<string, string> } | null> {
-  if (!extractorModelId) return null;
-  const model = modelRegistry.getAll().find((m) => m.id === extractorModelId);
-  if (!model) {
-    noteExtractorSkipped(`extractor model "${extractorModelId}" not found in registry`);
-    return null;
-  }
-  const auth = await modelRegistry.getApiKeyAndHeaders(model);
-  if (!auth?.ok || !auth.apiKey) return null;
-  return { model, apiKey: auth.apiKey, ...(auth.headers ? { headers: auth.headers } : {}) };
-}
+type ExtractorContext = {
+  modelRegistry: ExtractorModelRegistry;
+  sessionManager: SessionManagerLike;
+};
 
 const runtimeDeps: MemoryExtensionDeps = {
   memoryService: runtimeMemoryService,
@@ -93,6 +80,40 @@ export function createMemoryExtension(deps: MemoryExtensionDeps = runtimeDeps) {
 
     configureExtractorDebug(deps.extractorDebug ?? false, deps.extractorMode, deps.extractorTriggerEvery);
 
+    const captureSession = (
+      reason: string,
+      sessionManager: SessionManagerLike,
+      options?: { target?: NotificationTarget; successMessage?: string },
+    ) => deps.memoryService.captureSessionConversation(sessionManager, reason, savedSessionSignatures, options);
+
+    const maybeQueueExtraction = async (
+      reason: string,
+      ctx: ExtractorContext,
+      target?: NotificationTarget,
+    ): Promise<boolean> => {
+      if (deps.extractorMode === "off") return false;
+
+      const resolved = await resolveExtractorModel(deps.extractorModelId, ctx.modelRegistry);
+      if (!resolved) return false;
+
+      noteExtractorQueued(reason, resolved.model.id);
+      const queued = deps.memoryService.queueLLMExtraction(
+        ctx.sessionManager,
+        resolved.model,
+        target,
+        { apiKey: resolved.apiKey, ...(resolved.headers ? { headers: resolved.headers } : {}) },
+      );
+
+      if (!queued) {
+        noteExtractorSkipped(
+          reason.startsWith("shutdown:")
+            ? "shutdown run skipped: not enough memory-worthy context yet"
+            : "not enough memory-worthy context yet",
+        );
+      }
+      return queued;
+    };
+
     pi.on("session_start", async (_event, ctx) => {
       maybeStartExtractorDebugOverlay(ctx);
     });
@@ -100,22 +121,14 @@ export function createMemoryExtension(deps: MemoryExtensionDeps = runtimeDeps) {
     pi.on("input", async (event, ctx) => {
       if (event.source === "extension") return { action: "continue" };
 
-      sessionMessageCount++;
+      sessionMessageCount += 1;
       noteUserTurnForExtractorDebug();
       deps.memoryService.queueAutomaticCapture(event.text, ctx);
 
-      if (deps.extractorMode !== "off" && sessionMessageCount % deps.extractorTriggerEvery === 0) {
-        const resolved = await resolveExtractorModel(deps.extractorModelId, ctx.modelRegistry);
-        if (resolved) {
-          noteExtractorQueued("scheduled", resolved.model.id);
-          const queued = deps.memoryService.queueLLMExtraction(
-            ctx.sessionManager,
-            resolved.model,
-            ctx,
-            { apiKey: resolved.apiKey, ...(resolved.headers ? { headers: resolved.headers } : {}) },
-          );
-          if (!queued) noteExtractorSkipped("not enough memory-worthy context yet");
-        }
+      const shouldExtract =
+        deps.extractorMode !== "off" && sessionMessageCount % deps.extractorTriggerEvery === 0;
+      if (shouldExtract) {
+        await maybeQueueExtraction("scheduled", ctx, ctx);
       }
 
       return { action: "continue" };
@@ -126,9 +139,8 @@ export function createMemoryExtension(deps: MemoryExtensionDeps = runtimeDeps) {
         const memories = await deps.memoryService.findRelevantMemories(event.prompt, 3);
         if (memories.length === 0) return;
 
-        const memoryLines = memories.map((memory) => `- ${memory.text}`);
         return {
-          systemPrompt: `${event.systemPrompt}\n\nRelevant user memory:\n${memoryLines.join("\n")}`,
+          systemPrompt: `${event.systemPrompt}\n\nRelevant user memory:\n${memories.map((memory) => `- ${memory.text}`).join("\n")}`,
         };
       } catch {
         return;
@@ -136,49 +148,17 @@ export function createMemoryExtension(deps: MemoryExtensionDeps = runtimeDeps) {
     });
 
     pi.on("session_before_compact", async (_event, ctx) => {
-      await deps.memoryService.captureSessionConversation(
-        ctx.sessionManager,
-        "before_compact",
-        savedSessionSignatures,
-        {
-          target: ctx,
-        },
-      );
+      await captureSession("before_compact", ctx.sessionManager, { target: ctx });
     });
 
     pi.on("session_before_switch", async (event, ctx) => {
-      await deps.memoryService.captureSessionConversation(
-        ctx.sessionManager,
-        `before_switch:${event.reason}`,
-        savedSessionSignatures,
-        {
-          target: ctx,
-        },
-      );
+      await captureSession(`before_switch:${event.reason}`, ctx.sessionManager, { target: ctx });
     });
 
     pi.on("session_shutdown", async (event, ctx) => {
       if (event.reason !== "reload") {
-        await deps.memoryService.captureSessionConversation(
-          ctx.sessionManager,
-          `shutdown:${event.reason}`,
-          savedSessionSignatures,
-        ).catch(() => undefined);
-
-        if (deps.extractorMode !== "off") {
-          const resolved = await resolveExtractorModel(deps.extractorModelId, ctx.modelRegistry);
-          if (resolved) {
-            noteExtractorQueued(`shutdown:${event.reason}`, resolved.model.id);
-            const queued = deps.memoryService.queueLLMExtraction(
-              ctx.sessionManager,
-              resolved.model,
-              undefined,
-              { apiKey: resolved.apiKey, ...(resolved.headers ? { headers: resolved.headers } : {}) },
-            );
-            if (!queued) noteExtractorSkipped("shutdown run skipped: not enough memory-worthy context yet");
-          }
-        }
-
+        await captureSession(`shutdown:${event.reason}`, ctx.sessionManager).catch(() => undefined);
+        await maybeQueueExtraction(`shutdown:${event.reason}`, ctx);
         deps.memoryService.queueConsolidation();
       }
 
@@ -190,6 +170,28 @@ export function createMemoryExtension(deps: MemoryExtensionDeps = runtimeDeps) {
     }
 
     deps.registerCommands(pi);
+  };
+}
+
+async function resolveExtractorModel(
+  extractorModelId: string | undefined,
+  modelRegistry: ExtractorModelRegistry,
+): Promise<{ model: Model<Api>; apiKey: string; headers?: Record<string, string> } | null> {
+  if (!extractorModelId) return null;
+
+  const model = modelRegistry.getAll().find((candidate) => candidate.id === extractorModelId);
+  if (!model) {
+    noteExtractorSkipped(`extractor model "${extractorModelId}" not found in registry`);
+    return null;
+  }
+
+  const auth = await modelRegistry.getApiKeyAndHeaders(model);
+  if (!auth?.ok || !auth.apiKey) return null;
+
+  return {
+    model,
+    apiKey: auth.apiKey,
+    ...(auth.headers ? { headers: auth.headers } : {}),
   };
 }
 

@@ -1,5 +1,7 @@
 export type NoodleDbMode = "local" | "cloud";
 
+export type NoodleEmbeddingProvider = "openai" | "lm_studio" | "ollama" | "custom";
+
 export type NoodleExtractorMode = "off" | "conservative" | "balanced" | "proactive";
 
 export type NoodleExtractorConfig = {
@@ -35,7 +37,7 @@ export type NoodleConfig = {
   };
   embedding: {
     /** Human-readable provider label (openai, lm_studio, ollama, custom) */
-    provider: string;
+    provider: NoodleEmbeddingProvider;
     /** API key or placeholder */
     apiKey: string;
     /** Base URL for the /v1/embeddings endpoint */
