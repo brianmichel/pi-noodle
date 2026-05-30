@@ -11,19 +11,31 @@ import {
   truncateToWidth,
 } from "@earendil-works/pi-tui";
 
-import { DEFAULT_EXTRACTOR_MODE, defaultExtractorTriggerEvery, resolveConfigPath } from "./config.ts";
-import type { NoodleConfig, NoodleConfigPartial, NoodleExtractorMode } from "./types.ts";
+import { resolveConfigPath } from "./config.ts";
+import {
+  applyDraftDefaults,
+  createDraft,
+  type ConfigFieldId,
+  type DraftConfig,
+  EMBEDDING_PROVIDERS,
+  FIELD,
+  labelForField,
+  parseExtractorMode,
+  summarizeDraft,
+  toPartialConfig,
+  validateDraft,
+} from "./config/schema.ts";
+import type { NoodleConfig, NoodleConfigPartial, NoodleEmbeddingProvider } from "./types.ts";
+import { maskSecret } from "./utils.ts";
 
 type DoneFn<T> = (result: T) => void;
-
 type TuiLike = TUI;
+type ComponentLike = Component;
 
 type ThemeLike = {
   fg?: (color: string, text: string) => string;
   bold?: (text: string) => string;
 };
-
-type ComponentLike = Component;
 
 type CustomUi = {
   custom?: <T>(
@@ -37,41 +49,17 @@ type CustomUi = {
   confirm: (title: string, message: string) => Promise<boolean>;
 };
 
-type DraftConfig = {
-  dbMode: "local" | "cloud";
-  dbPath: string;
-  dbUrl: string;
-  dbAuthToken: string;
-  embeddingProvider: string;
-  embeddingApiKey: string;
-  embeddingBaseUrl: string;
-  embeddingModel: string;
-  extractorMode: NoodleExtractorMode;
-  extractorModel: string;
-  extractorTriggerEvery: string;
-  extractorDebug: boolean;
-};
-
 type ConfigScreenResult =
   | { cancelled: true }
   | { cancelled: false; partial: NoodleConfigPartial };
 
-const PROVIDERS = ["openai", "lm_studio", "ollama", "custom"] as const;
-
-const FIELD = {
-  DB_MODE: "dbMode",
-  DB_PATH: "dbPath",
-  DB_URL: "dbUrl",
-  DB_AUTH_TOKEN: "dbAuthToken",
-  EMBEDDING_PROVIDER: "embeddingProvider",
-  EMBEDDING_API_KEY: "embeddingApiKey",
-  EMBEDDING_BASE_URL: "embeddingBaseUrl",
-  EMBEDDING_MODEL: "embeddingModel",
-  EXTRACTOR_MODE: "extractorMode",
-  EXTRACTOR_MODEL: "extractorModel",
-  EXTRACTOR_TRIGGER_EVERY: "extractorTriggerEvery",
-  EXTRACTOR_DEBUG: "extractorDebug",
-} as const;
+type TextFieldSpec = {
+  id: ConfigFieldId;
+  label: string;
+  description: string;
+  value: string;
+  rawValue?: string;
+};
 
 export async function runConfigScreen(
   ui: CustomUi,
@@ -102,66 +90,20 @@ export async function runConfigScreen(
     }
 
     function createSettingsList(): SettingsList {
-      const items = buildItems(draft, tui, theme, (id, value) => {
-        applyChange(id, value);
-      });
-
+      const items = buildItems(draft, tui, theme, applyChange);
       return new SettingsList(
         items,
         Math.min(items.length + 4, 16),
         getSettingsListTheme(),
-        (id, newValue) => {
-          applyChange(id, newValue);
-        },
-        () => {
-          done({ cancelled: true });
-        },
+        applyChange,
+        () => done({ cancelled: true }),
         { enableSearch: true },
       );
     }
 
     function applyChange(id: string, value: string): void {
-      switch (id) {
-        case FIELD.DB_MODE:
-          draft.dbMode = value === "cloud" ? "cloud" : "local";
-          break;
-        case FIELD.DB_PATH:
-          draft.dbPath = value;
-          break;
-        case FIELD.DB_URL:
-          draft.dbUrl = value;
-          break;
-        case FIELD.DB_AUTH_TOKEN:
-          draft.dbAuthToken = value;
-          break;
-        case FIELD.EMBEDDING_PROVIDER:
-          draft.embeddingProvider = value;
-          break;
-        case FIELD.EMBEDDING_API_KEY:
-          draft.embeddingApiKey = value;
-          break;
-        case FIELD.EMBEDDING_BASE_URL:
-          draft.embeddingBaseUrl = value;
-          break;
-        case FIELD.EMBEDDING_MODEL:
-          draft.embeddingModel = value;
-          break;
-        case FIELD.EXTRACTOR_MODE:
-          draft.extractorMode = value === "off" || value === "conservative" || value === "proactive" ? value : "balanced";
-          break;
-        case FIELD.EXTRACTOR_MODEL:
-          draft.extractorModel = value;
-          break;
-        case FIELD.EXTRACTOR_TRIGGER_EVERY:
-          draft.extractorTriggerEvery = value;
-          break;
-        case FIELD.EXTRACTOR_DEBUG:
-          draft.extractorDebug = value === "on";
-          break;
-      }
-
-      applyProviderDefaults(draft);
-      rebuild(`Updated ${labelForField(id)}.`);
+      applyDraftChange(draft, id as ConfigFieldId, value);
+      rebuild(`Updated ${labelForField(id as ConfigFieldId)}.`);
     }
 
     async function save(): Promise<void> {
@@ -171,16 +113,13 @@ export async function runConfigScreen(
         return;
       }
 
-      const ok = await ui.confirm(
-        "Save noodle config?",
-        buildSummary(draft).join("\n"),
-      );
+      const ok = await ui.confirm("Save noodle config?", summarizeDraft(draft).join("\n"));
       if (!ok) {
         rebuild("Save cancelled.");
         return;
       }
 
-      done({ cancelled: false, partial: toPartial(draft) });
+      done({ cancelled: false, partial: toPartialConfig(draft) });
     }
 
     return {
@@ -223,208 +162,180 @@ function buildItems(
   applyChange: (id: string, value: string) => void,
 ): SettingItem[] {
   const items: SettingItem[] = [
-    {
-      id: FIELD.DB_MODE,
-      label: "Database mode",
-      currentValue: draft.dbMode,
-      values: ["local", "cloud"],
-      description: "Where memories are stored: local SQLite file or Turso cloud libSQL.",
-    },
+    choiceItem(FIELD.DB_MODE, "Database mode", draft.dbMode, ["local", "cloud"], "Where memories are stored: local SQLite file or Turso cloud libSQL."),
   ];
 
   if (draft.dbMode === "local") {
-    items.push(textItem(
-      FIELD.DB_PATH,
-      "Database file path",
-      draft.dbPath,
-      "Path to the local SQLite/libSQL database file.",
-      tui,
-      theme,
-      applyChange,
-    ));
+    items.push(textFieldItem(draft, tui, theme, applyChange, {
+      id: FIELD.DB_PATH,
+      label: "Database file path",
+      description: "Path to the local SQLite/libSQL database file.",
+      value: draft.dbPath,
+    }));
   } else {
     items.push(
-      textItem(
-        FIELD.DB_URL,
-        "Turso database URL",
-        draft.dbUrl,
-        'Hosted libSQL URL. Should start with "libsql://".',
-        tui,
-        theme,
-        applyChange,
-      ),
-      textItem(
-        FIELD.DB_AUTH_TOKEN,
-        "Turso auth token",
-        maskSecret(draft.dbAuthToken),
-        "Access token for the Turso database.",
-        tui,
-        theme,
-        applyChange,
-        draft.dbAuthToken,
-      ),
+      textFieldItem(draft, tui, theme, applyChange, {
+        id: FIELD.DB_URL,
+        label: "Turso database URL",
+        description: 'Hosted libSQL URL. Should start with "libsql://".',
+        value: draft.dbUrl,
+      }),
+      textFieldItem(draft, tui, theme, applyChange, {
+        id: FIELD.DB_AUTH_TOKEN,
+        label: "Turso auth token",
+        description: "Access token for the Turso database.",
+        value: maskSecret(draft.dbAuthToken),
+        rawValue: draft.dbAuthToken,
+      }),
     );
   }
 
-  items.push({
-    id: FIELD.EMBEDDING_PROVIDER,
-    label: "Embedding provider",
-    currentValue: draft.embeddingProvider,
-    values: [...PROVIDERS],
-    description: "Provider used to generate embeddings for memory search.",
-  });
+  items.push(choiceItem(
+    FIELD.EMBEDDING_PROVIDER,
+    "Embedding provider",
+    draft.embeddingProvider,
+    [...EMBEDDING_PROVIDERS],
+    "Provider used to generate embeddings for memory search.",
+  ));
 
-  if (draft.embeddingProvider === "openai") {
-    items.push(
-      textItem(
-        FIELD.EMBEDDING_API_KEY,
-        "OpenAI API key",
-        maskSecret(draft.embeddingApiKey),
-        "Required for OpenAI embeddings.",
-        tui,
-        theme,
-        applyChange,
-        draft.embeddingApiKey,
-      ),
-      textItem(
-        FIELD.EMBEDDING_MODEL,
-        "Model name",
-        draft.embeddingModel,
-        "Embedding model ID, usually text-embedding-3-small.",
-        tui,
-        theme,
-        applyChange,
-      ),
-    );
-  } else if (draft.embeddingProvider === "lm_studio") {
-    items.push(textItem(
-      FIELD.EMBEDDING_BASE_URL,
-      "LM Studio base URL",
-      draft.embeddingBaseUrl,
-      "Local OpenAI-compatible embeddings endpoint.",
-      tui,
-      theme,
-      applyChange,
-    ));
-  } else if (draft.embeddingProvider === "ollama") {
-    items.push(
-      textItem(
-        FIELD.EMBEDDING_MODEL,
-        "Ollama embedding model",
-        draft.embeddingModel,
-        "Model to call, e.g. nomic-embed-text.",
-        tui,
-        theme,
-        applyChange,
-      ),
-      textItem(
-        FIELD.EMBEDDING_BASE_URL,
-        "Ollama base URL",
-        draft.embeddingBaseUrl,
-        "Usually http://localhost:11434/v1.",
-        tui,
-        theme,
-        applyChange,
-      ),
-    );
-  } else {
-    items.push(
-      textItem(
-        FIELD.EMBEDDING_BASE_URL,
-        "Embedding base URL",
-        draft.embeddingBaseUrl,
-        "Any OpenAI-compatible /v1/embeddings endpoint.",
-        tui,
-        theme,
-        applyChange,
-      ),
-      textItem(
-        FIELD.EMBEDDING_MODEL,
-        "Model name",
-        draft.embeddingModel,
-        "Model to send to the embeddings endpoint.",
-        tui,
-        theme,
-        applyChange,
-      ),
-      textItem(
-        FIELD.EMBEDDING_API_KEY,
-        "API key",
-        maskSecret(draft.embeddingApiKey),
-        "Optional key or placeholder required by your provider.",
-        tui,
-        theme,
-        applyChange,
-        draft.embeddingApiKey,
-      ),
-    );
-  }
+  items.push(...buildEmbeddingItems(draft, tui, theme, applyChange));
 
-  items.push({
-    id: FIELD.EXTRACTOR_MODE,
-    label: "Memory mode",
-    currentValue: draft.extractorMode,
-    values: ["off", "conservative", "balanced", "proactive"],
-    description: "Off disables extraction. Conservative saves less, proactive discovers more, balanced is the default.",
-  });
+  items.push(choiceItem(
+    FIELD.EXTRACTOR_MODE,
+    "Memory mode",
+    draft.extractorMode,
+    ["off", "conservative", "balanced", "proactive"],
+    "Off disables extraction. Conservative saves less, proactive discovers more, balanced is the default.",
+  ));
 
   if (draft.extractorMode !== "off") {
     items.push(
-      textItem(
-        FIELD.EXTRACTOR_MODEL,
-        "Extractor model ID",
-        draft.extractorModel,
-        "Pi model ID used for extraction. Change this to trade quality, speed, and cost.",
-        tui,
-        theme,
-        applyChange,
+      textFieldItem(draft, tui, theme, applyChange, {
+        id: FIELD.EXTRACTOR_MODEL,
+        label: "Extractor model ID",
+        description: "Pi model ID used for extraction. Change this to trade quality, speed, and cost.",
+        value: draft.extractorModel,
+      }),
+      textFieldItem(draft, tui, theme, applyChange, {
+        id: FIELD.EXTRACTOR_TRIGGER_EVERY,
+        label: "Extract every N turns",
+        description: "How often to run automatic extraction. Leave the mode default unless you want manual control.",
+        value: draft.extractorTriggerEvery,
+      }),
+      choiceItem(
+        FIELD.EXTRACTOR_DEBUG,
+        "Extractor debug widget",
+        draft.extractorDebug ? "on" : "off",
+        ["off", "on"],
+        "Show the live extractor debug widget in Pi while developing.",
       ),
-      textItem(
-        FIELD.EXTRACTOR_TRIGGER_EVERY,
-        "Extract every N turns",
-        draft.extractorTriggerEvery,
-        "How often to run automatic extraction. Leave the mode default unless you want manual control.",
-        tui,
-        theme,
-        applyChange,
-      ),
-      {
-        id: FIELD.EXTRACTOR_DEBUG,
-        label: "Extractor debug widget",
-        currentValue: draft.extractorDebug ? "on" : "off",
-        values: ["off", "on"],
-        description: "Show the live extractor debug widget in Pi while developing.",
-      },
     );
   }
 
   return items;
 }
 
-function textItem(
-  id: string,
-  label: string,
-  currentValue: string,
-  description: string,
+function buildEmbeddingItems(
+  draft: DraftConfig,
   tui: TuiLike,
   theme: ThemeLike,
   applyChange: (id: string, value: string) => void,
-  rawValue?: string,
+): SettingItem[] {
+  switch (draft.embeddingProvider) {
+    case "openai":
+      return [
+        textFieldItem(draft, tui, theme, applyChange, {
+          id: FIELD.EMBEDDING_API_KEY,
+          label: "OpenAI API key",
+          description: "Required for OpenAI embeddings.",
+          value: maskSecret(draft.embeddingApiKey),
+          rawValue: draft.embeddingApiKey,
+        }),
+        textFieldItem(draft, tui, theme, applyChange, {
+          id: FIELD.EMBEDDING_MODEL,
+          label: "Model name",
+          description: "Embedding model ID, usually text-embedding-3-small.",
+          value: draft.embeddingModel,
+        }),
+      ];
+    case "lm_studio":
+      return [textFieldItem(draft, tui, theme, applyChange, {
+        id: FIELD.EMBEDDING_BASE_URL,
+        label: "LM Studio base URL",
+        description: "Local OpenAI-compatible embeddings endpoint.",
+        value: draft.embeddingBaseUrl,
+      })];
+    case "ollama":
+      return [
+        textFieldItem(draft, tui, theme, applyChange, {
+          id: FIELD.EMBEDDING_MODEL,
+          label: "Ollama embedding model",
+          description: "Model to call, e.g. nomic-embed-text.",
+          value: draft.embeddingModel,
+        }),
+        textFieldItem(draft, tui, theme, applyChange, {
+          id: FIELD.EMBEDDING_BASE_URL,
+          label: "Ollama base URL",
+          description: "Usually http://localhost:11434/v1.",
+          value: draft.embeddingBaseUrl,
+        }),
+      ];
+    case "custom":
+      return [
+        textFieldItem(draft, tui, theme, applyChange, {
+          id: FIELD.EMBEDDING_BASE_URL,
+          label: "Embedding base URL",
+          description: "Any OpenAI-compatible /v1/embeddings endpoint.",
+          value: draft.embeddingBaseUrl,
+        }),
+        textFieldItem(draft, tui, theme, applyChange, {
+          id: FIELD.EMBEDDING_MODEL,
+          label: "Model name",
+          description: "Model to send to the embeddings endpoint.",
+          value: draft.embeddingModel,
+        }),
+        textFieldItem(draft, tui, theme, applyChange, {
+          id: FIELD.EMBEDDING_API_KEY,
+          label: "API key",
+          description: "Optional key or placeholder required by your provider.",
+          value: maskSecret(draft.embeddingApiKey),
+          rawValue: draft.embeddingApiKey,
+        }),
+      ];
+  }
+}
+
+function choiceItem(
+  id: string,
+  label: string,
+  currentValue: string,
+  values: string[],
+  description: string,
+): SettingItem {
+  return { id, label, currentValue, values, description };
+}
+
+function textFieldItem(
+  _draft: DraftConfig,
+  tui: TuiLike,
+  theme: ThemeLike,
+  applyChange: (id: string, value: string) => void,
+  spec: TextFieldSpec,
 ): SettingItem {
   return {
-    id,
-    label,
-    currentValue,
-    description,
+    id: spec.id,
+    label: spec.label,
+    currentValue: spec.value,
+    description: spec.description,
     submenu: (existing, done) =>
       createTextEditor(
         tui,
         theme,
-        label,
-        rawValue ?? existing,
-        description,
+        spec.label,
+        spec.rawValue ?? existing,
+        spec.description,
         (value) => {
-          if (value !== undefined) applyChange(id, value);
+          if (value !== undefined) applyChange(spec.id, value);
           done(value);
         },
       ),
@@ -458,15 +369,14 @@ function createTextEditor(
 
   return {
     render(width: number): string[] {
-      const lines = [
+      return [
         color("accent", bold(label)),
         color("dim", description),
         "",
         ...editor.render(width),
         "",
         color("dim", "Enter to save • Esc to cancel"),
-      ];
-      return lines.map((line) => truncateToWidth(line, width));
+      ].map((line) => truncateToWidth(line, width));
     },
     invalidate(): void {},
     handleInput(data: string): void {
@@ -480,177 +390,50 @@ function createTextEditor(
   };
 }
 
-function labelForField(id: string): string {
+function applyDraftChange(draft: DraftConfig, id: ConfigFieldId, value: string): void {
   switch (id) {
     case FIELD.DB_MODE:
-      return "Database mode";
+      draft.dbMode = value === "cloud" ? "cloud" : "local";
+      break;
     case FIELD.DB_PATH:
-      return "Database file path";
+      draft.dbPath = value;
+      break;
     case FIELD.DB_URL:
-      return "Turso database URL";
+      draft.dbUrl = value;
+      break;
     case FIELD.DB_AUTH_TOKEN:
-      return "Turso auth token";
+      draft.dbAuthToken = value;
+      break;
     case FIELD.EMBEDDING_PROVIDER:
-      return "Embedding provider";
+      draft.embeddingProvider = normalizeProviderSelection(value);
+      break;
     case FIELD.EMBEDDING_API_KEY:
-      return "API key";
+      draft.embeddingApiKey = value;
+      break;
     case FIELD.EMBEDDING_BASE_URL:
-      return "Embedding base URL";
+      draft.embeddingBaseUrl = value;
+      break;
     case FIELD.EMBEDDING_MODEL:
-      return "Model name";
+      draft.embeddingModel = value;
+      break;
     case FIELD.EXTRACTOR_MODE:
-      return "Memory mode";
+      draft.extractorMode = parseExtractorMode(value);
+      break;
     case FIELD.EXTRACTOR_MODEL:
-      return "Extractor model ID";
+      draft.extractorModel = value;
+      break;
     case FIELD.EXTRACTOR_TRIGGER_EVERY:
-      return "Extract every N turns";
+      draft.extractorTriggerEvery = value;
+      break;
     case FIELD.EXTRACTOR_DEBUG:
-      return "Extractor debug widget";
-    default:
-      return id;
+      draft.extractorDebug = value === "on";
+      break;
   }
+
+  applyDraftDefaults(draft);
 }
 
-function createDraft(config: NoodleConfig): DraftConfig {
-  return {
-    dbMode: config.db.mode,
-    dbPath: config.db.path,
-    dbUrl: config.db.url ?? "libsql://",
-    dbAuthToken: config.db.authToken ?? "",
-    embeddingProvider: config.embedding.provider,
-    embeddingApiKey: config.embedding.apiKey,
-    embeddingBaseUrl: config.embedding.baseUrl,
-    embeddingModel: config.embedding.model,
-    extractorMode: config.extractor?.mode ?? "off",
-    extractorModel: config.extractor?.model ?? "",
-    extractorTriggerEvery: String(config.extractor?.triggerEvery ?? defaultExtractorTriggerEvery(config.extractor?.mode ?? DEFAULT_EXTRACTOR_MODE)),
-    extractorDebug: config.extractor?.debug ?? false,
-  };
-}
-
-function applyProviderDefaults(draft: DraftConfig): void {
-  if (!PROVIDERS.includes(draft.embeddingProvider as (typeof PROVIDERS)[number])) {
-    draft.embeddingProvider = "custom";
-  }
-
-  if (draft.embeddingProvider === "openai") {
-    draft.embeddingBaseUrl = "https://api.openai.com/v1";
-    if (!draft.embeddingModel) draft.embeddingModel = "text-embedding-3-small";
-  }
-  if (draft.embeddingProvider === "lm_studio") {
-    if (!draft.embeddingBaseUrl) draft.embeddingBaseUrl = "http://localhost:1234/v1";
-    draft.embeddingApiKey = "lm-studio";
-    draft.embeddingModel = "";
-  }
-  if (draft.embeddingProvider === "ollama") {
-    if (!draft.embeddingBaseUrl) draft.embeddingBaseUrl = "http://localhost:11434/v1";
-    draft.embeddingApiKey = "ollama";
-    if (!draft.embeddingModel) draft.embeddingModel = "nomic-embed-text";
-  }
-  if (draft.embeddingProvider === "custom") {
-    if (!draft.embeddingBaseUrl) draft.embeddingBaseUrl = "https://api.openai.com/v1";
-    if (!draft.embeddingModel) draft.embeddingModel = "text-embedding-3-small";
-  }
-
-  if (!draft.dbUrl) draft.dbUrl = "libsql://";
-  if (!draft.extractorModel) draft.extractorModel = "";
-  if (!draft.extractorTriggerEvery) {
-    draft.extractorTriggerEvery = String(defaultExtractorTriggerEvery(draft.extractorMode ?? DEFAULT_EXTRACTOR_MODE));
-  }
-}
-
-function validateDraft(draft: DraftConfig): string[] {
-  const errors: string[] = [];
-
-  if (draft.dbMode === "local" && !draft.dbPath.trim()) {
-    errors.push("Database file path is required for local mode.");
-  }
-  if (draft.dbMode === "cloud") {
-    if (!draft.dbUrl.trim().startsWith("libsql://")) {
-      errors.push('Turso database URL must start with "libsql://".');
-    }
-    if (!draft.dbAuthToken.trim()) {
-      errors.push("Turso auth token is required for cloud mode.");
-    }
-  }
-
-  if (draft.embeddingProvider === "openai") {
-    if (!draft.embeddingApiKey.trim()) errors.push("OpenAI API key is required.");
-    if (!draft.embeddingModel.trim()) errors.push("Model name is required.");
-  }
-  if (draft.embeddingProvider === "lm_studio") {
-    if (!draft.embeddingBaseUrl.trim()) errors.push("LM Studio base URL is required.");
-  }
-  if (draft.embeddingProvider === "ollama") {
-    if (!draft.embeddingModel.trim()) errors.push("Ollama embedding model is required.");
-    if (!draft.embeddingBaseUrl.trim()) errors.push("Ollama base URL is required.");
-  }
-  if (draft.embeddingProvider === "custom") {
-    if (!draft.embeddingBaseUrl.trim()) errors.push("Embedding base URL is required.");
-    if (!draft.embeddingModel.trim()) errors.push("Model name is required.");
-  }
-
-  if (draft.extractorMode !== "off") {
-    const n = parseInt(draft.extractorTriggerEvery.trim(), 10);
-    if (Number.isNaN(n) || n < 1) {
-      errors.push("Extract every N turns must be a positive integer.");
-    }
-  }
-
-  return errors;
-}
-
-function toPartial(draft: DraftConfig): NoodleConfigPartial {
-  const partial: NoodleConfigPartial = {
-    db: {
-      mode: draft.dbMode,
-      path: draft.dbPath.trim(),
-      ...(draft.dbMode === "cloud"
-        ? { url: draft.dbUrl.trim(), authToken: draft.dbAuthToken.trim() }
-        : {}),
-    },
-    embedding: {
-      provider: draft.embeddingProvider,
-      apiKey: draft.embeddingApiKey,
-      baseUrl: draft.embeddingBaseUrl.trim(),
-      model: draft.embeddingModel.trim(),
-    },
-    extractor: draft.extractorMode !== "off"
-      ? {
-          mode: draft.extractorMode,
-          ...(draft.extractorModel.trim() ? { model: draft.extractorModel.trim() } : {}),
-          triggerEvery: parseInt(draft.extractorTriggerEvery.trim(), 10) || defaultExtractorTriggerEvery(draft.extractorMode),
-          debug: draft.extractorDebug,
-        }
-      : { mode: "off" },
-  };
-
-  if (draft.embeddingProvider === "openai") {
-    partial.embedding!.baseUrl = "https://api.openai.com/v1";
-  }
-  if (draft.embeddingProvider === "lm_studio") {
-    partial.embedding!.apiKey = "lm-studio";
-    partial.embedding!.model = "";
-  }
-  if (draft.embeddingProvider === "ollama") {
-    partial.embedding!.apiKey = "ollama";
-  }
-
-  return partial;
-}
-
-function buildSummary(draft: DraftConfig): string[] {
-  return [
-    `Database: ${draft.dbMode}  ${draft.dbMode === "cloud" ? draft.dbUrl.trim() : draft.dbPath.trim()}`,
-    `Embedding: ${draft.embeddingProvider}  ${draft.embeddingModel.trim() || draft.embeddingBaseUrl.trim()}`,
-    draft.extractorMode !== "off" && draft.extractorModel.trim()
-      ? `Memory mode: ${draft.extractorMode}  ${draft.extractorModel.trim()}  every ${parseInt(draft.extractorTriggerEvery.trim(), 10) || defaultExtractorTriggerEvery(draft.extractorMode)} turns  debug ${draft.extractorDebug ? "on" : "off"}`
-      : "Memory mode: off",
-  ];
-}
-
-function maskSecret(value: string): string {
-  if (!value) return "(empty)";
-  if (value.length <= 6) return "*".repeat(value.length);
-  return `${value.slice(0, 3)}${"*".repeat(Math.max(3, value.length - 6))}${value.slice(-3)}`;
+function normalizeProviderSelection(value: string): NoodleEmbeddingProvider {
+  if (value === "openai" || value === "lm_studio" || value === "ollama") return value;
+  return "custom";
 }

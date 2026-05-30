@@ -271,11 +271,8 @@ export class MemoryService {
 
   async addCandidateIfNovel(text: string, normalized: string, metadata: JsonObject): Promise<"saved" | "merged" | "skipped"> {
     const existing = await this.list();
-    const normalizedValue = normalized.trim().toLowerCase();
-    const duplicate = existing.find((memory) => {
-      const current = memory.text.trim().toLowerCase();
-      return current === normalizedValue || current.includes(normalizedValue) || normalizedValue.includes(current);
-    });
+    const normalizedValue = normalizeText(normalized);
+    const duplicate = existing.find((memory) => overlapsNormalizedText(memory.text, normalizedValue));
 
     if (duplicate?.id) {
       await this.update(duplicate.id, {
@@ -335,22 +332,12 @@ export class MemoryService {
       label: options?.label ?? "Memory candidate promotion",
       ...(options?.target ? { target: options.target } : {}),
       task: async () => {
-        const result = await this.promoteSignal(signal, decision.score, decision.reasons, {
-          category: candidate.category,
-          categories: [candidate.category],
-          durability: candidate.durability,
-          confidence: signal.strongestConfidence,
-          source: signal.count >= 2 && !candidate.explicit ? "repetition" : candidate.source,
-          signal_count: signal.count,
-          trigger_reasons: signal.reasons,
-          promotion_score: decision.score,
-          promotion_reasons: decision.reasons,
-          assistant_id: DEFAULT_AGENT_ID,
-          auto_saved: true,
-          extractor_mode: this.extractorMode,
-          ...signal.metadata,
-          ...options?.extraMetadata,
-        });
+        const result = await this.promoteSignal(
+          signal,
+          decision.score,
+          decision.reasons,
+          buildPromotionMetadata(candidate, signal, decision.score, decision.reasons, this.extractorMode, options?.extraMetadata),
+        );
         if (result === "saved" || result === "merged") {
           signal.promotedAt = Date.now();
           signal.lastPromotionScore = decision.score;
@@ -419,11 +406,7 @@ export class MemoryService {
   private findMatchingSignalKey(candidate: MemoryCandidate): string | null {
     for (const [key, signal] of this.localSignals.entries()) {
       if (signal.category !== candidate.category) continue;
-      if (
-        signal.normalized === candidate.normalized ||
-        signal.normalized.includes(candidate.normalized) ||
-        candidate.normalized.includes(signal.normalized)
-      ) {
+      if (overlapsNormalizedText(signal.normalized, candidate.normalized)) {
         return key;
       }
     }
@@ -435,11 +418,7 @@ export class MemoryService {
     for (const record of records) {
       const normalized = record.text.trim().toLowerCase();
       for (const signal of this.localSignals.values()) {
-        if (
-          signal.normalized === normalized ||
-          signal.normalized.includes(normalized) ||
-          normalized.includes(signal.normalized)
-        ) {
+        if (overlapsNormalizedText(signal.normalized, normalized)) {
           signal.retrievalCount = (signal.retrievalCount ?? 0) + 1;
           signal.lastRetrievedAt = now;
         }
@@ -454,6 +433,44 @@ export class MemoryService {
       ...(scope?.sessionId ? { sessionId: scope.sessionId } : {}),
     };
   }
+}
+
+function buildPromotionMetadata(
+  candidate: MemoryCandidate,
+  signal: LocalSignal,
+  score: number,
+  promotionReasons: string[],
+  extractorMode: NoodleExtractorMode,
+  extraMetadata?: JsonObject,
+): JsonObject {
+  return {
+    category: candidate.category,
+    categories: [candidate.category],
+    durability: candidate.durability,
+    confidence: signal.strongestConfidence,
+    source: signal.count >= 2 && !candidate.explicit ? "repetition" : candidate.source,
+    signal_count: signal.count,
+    trigger_reasons: signal.reasons,
+    promotion_score: score,
+    promotion_reasons: promotionReasons,
+    assistant_id: DEFAULT_AGENT_ID,
+    auto_saved: true,
+    extractor_mode: extractorMode,
+    ...signal.metadata,
+    ...extraMetadata,
+  };
+}
+
+function normalizeText(text: string): string {
+  return text.trim().toLowerCase();
+}
+
+function overlapsNormalizedText(left: string, right: string): boolean {
+  const normalizedLeft = normalizeText(left);
+  const normalizedRight = normalizeText(right);
+  return normalizedLeft === normalizedRight
+    || normalizedLeft.includes(normalizedRight)
+    || normalizedRight.includes(normalizedLeft);
 }
 
 function mergeMemoryMetadata(existing: JsonObject, incoming: JsonObject): JsonObject {
