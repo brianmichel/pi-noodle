@@ -85,9 +85,32 @@ Run `/noodle web` in Pi to open the explorer in your browser. The server runs in
     "apiKey": "sk-...",
     "baseUrl": "https://api.openai.com/v1",
     "model": "text-embedding-3-small"
+  },
+  "extractor": {
+    "mode": "balanced",
+    "model": "deepseek/deepseek-v4-flash:free",
+    "triggerEvery": 10
   }
 }
 ```
+
+### Memory modes
+
+When memory mode is not `off`, capture uses **LLM-first discovery, policy-gated persistence**:
+
+- `conservative`
+  - fewer extraction runs
+  - higher bar for auto-save
+  - softer inferences are usually discarded until reinforced
+- `balanced` (recommended default)
+  - durable facts can auto-save
+  - medium-confidence preferences go to `/noodle review`
+- `proactive`
+  - more frequent extraction
+  - more candidate discovery
+  - pending review queue grows faster, but saved-memory safety rules stay the same
+
+The extractor model is configurable too, so you can tune quality/speed/cost separately from behavior mode.
 
 ## Environment variable overrides
 
@@ -102,11 +125,15 @@ Env vars take priority over the config file:
 | `OPENAI_API_KEY` | Embedding API key |
 | `EMBEDDING_BASE_URL` | Embedding endpoint URL |
 | `EMBEDDING_MODEL` | Embedding model name |
+| `NOODLE_EXTRACTOR_MODE` | Memory mode: off / conservative / balanced / proactive |
+| `NOODLE_EXTRACTOR_MODEL` | Extractor model ID |
+| `NOODLE_EXTRACTOR_TRIGGER_EVERY` | Automatic extraction cadence in user turns |
+| `NOODLE_EXTRACTOR_DEBUG` | Show the extractor debug widget: true / false |
 
 ## Architecture
 
 ```
-MemoryService (dedupe, heuristics, auto-capture)
+MemoryService (dedupe, policy, review queue, auto-capture)
        │
   MemoryBackend (interface)
        │
@@ -114,6 +141,25 @@ MemoryService (dedupe, heuristics, auto-capture)
        │
   ├── libSQL (local file or Turso Cloud)
   └── Embedder (OpenAI / LM Studio / Ollama / any /v1/embeddings)
+```
+
+### LLM-first memory pipeline
+
+```text
+user turn
+  │
+  ├─► lightweight heuristic prefilter
+  │      ├─ blocks sensitive / temporary content
+  │      └─ catches explicit high-signal memory asks
+  │
+  ├─► optional LLM extraction on configured cadence + model
+  │
+  ├─► local policy decision
+  │      ├─ save     → durable memory DB
+  │      ├─ pending  → /noodle review only
+  │      └─ discard  → dropped
+  │
+  └─► retrieval injects only saved memories
 ```
 
 ### What gets stored
@@ -124,9 +170,14 @@ Every memory is a row in SQLite with `text`, `embedding` (F32_BLOB), `category`,
 
 Vector similarity via `vector_distance_cos()` in libSQL, ranked by cosine distance, post-filtered by category and threshold.
 
-### Heuristics
+### Policy and review
 
-`MemoryService.policy.ts` classifies messages, tracks repetition (3× threshold), and auto-saves durable memories without explicit user commands.
+The system intentionally separates:
+
+- **detection** — heuristics + LLM extraction find memory candidates
+- **persistence** — local policy decides whether to save, keep pending, or discard
+
+That is what makes the system feel more proactive without letting low-confidence guesses pollute retrieval. Pending candidates stay visible in `/noodle review` but are **not** injected into prompts until promoted.
 
 ## File layout
 

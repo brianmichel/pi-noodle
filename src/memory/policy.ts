@@ -3,8 +3,10 @@ import type {
   MemoryCandidate,
   MemoryCategory,
   MemoryDurability,
+  MemoryPolicyDecision,
   PrefilterResult,
 } from "./types.ts";
+import type { NoodleExtractorMode } from "../types.ts";
 
 const EXPLICIT_PATTERNS: Array<{
   pattern: RegExp;
@@ -14,36 +16,14 @@ const EXPLICIT_PATTERNS: Array<{
   confidence?: number;
   explicit?: boolean;
 }> = [
-  // Identity
-  { pattern: /\bcall me\s+([^.!?\n]+)/i, category: "identity", durability: "durable", reason: "address_preference", confidence: 0.99, explicit: true },
-  { pattern: /\bmy name is\s+([^.!?\n]+)/i, category: "identity", durability: "durable", reason: "identity_fact", confidence: 0.99 },
-  { pattern: new RegExp("\\bi(?:\\u0027m|\\u2019m| am) (?:a|an)\\s+([^.!?\\n,]{3,50}?)\\s*(?:,|\\.|$|\\s+(?:at|who|and|but)\\b)", "i"), category: "identity", durability: "durable", reason: "role_identity", confidence: 0.96 },
-  { pattern: new RegExp("\\bi(?:\\u0027ve|\\u2019ve| have) been (?:doing|using|working (?:with|on))\\s+([^.!?\\n]+?)\\s+for\\s+(?:\\d+\\s+years?|years|a (?:long|while))\\b", "i"), category: "identity", durability: "durable", reason: "expertise", confidence: 0.94 },
-
-  // Explicit memory / durable user statements
-  { pattern: /\bremember\s+that\s+([^.!?\n]+)/i, category: "project", durability: "semi_durable", reason: "explicit_memory_request", confidence: 0.99, explicit: true },
-  { pattern: /\bfor most projects[,]?\s+i(?:\u0027d|\u2019d| would)?\s*(?:prefer|use)\s+([^.!?\n]+)/i, category: "coding_pref", durability: "semi_durable", reason: "project_default", confidence: 0.82 },
-  { pattern: /\bi (?:prefer|like)\s+([^.!?\n]+)/i, category: "response_style", durability: "semi_durable", reason: "stated_preference", confidence: 0.84 },
-  { pattern: /\bi usually prefer\s+([^.!?\n]+)/i, category: "response_style", durability: "semi_durable", reason: "habitual_preference", confidence: 0.78 },
-  { pattern: /\bi tend to prefer\s+([^.!?\n]+)/i, category: "response_style", durability: "semi_durable", reason: "habitual_preference", confidence: 0.78 },
-  { pattern: /\bi normally use\s+([^.!?\n]+)/i, category: "workflow", durability: "semi_durable", reason: "workflow_default", confidence: 0.76 },
-
-  // Strong / negative preferences
-  { pattern: new RegExp("\\b((?:always|never|don\\u0027t|don\\u2019t)\\s+[^.!?\\n]+)", "i"), category: "workflow", durability: "semi_durable", reason: "strong_preference", confidence: 0.86 },
-  { pattern: /\bplease don(?:\u0027|’)t\s+([^.!?\n]+)/i, category: "workflow", durability: "semi_durable", reason: "negative_preference", confidence: 0.88 },
-  { pattern: /\bavoid\s+([^.!?\n]+)/i, category: "workflow", durability: "semi_durable", reason: "negative_preference", confidence: 0.8 },
-
-  // Coding defaults
-  { pattern: /\buse\s+([^.!?\n]+?)\s+by default\b/i, category: "coding_pref", durability: "semi_durable", reason: "default_preference", confidence: 0.84 },
-  { pattern: /\bdefault to\s+([^.!?\n]+)/i, category: "coding_pref", durability: "semi_durable", reason: "default_preference", confidence: 0.84 },
-
-  // Response format / style
-  { pattern: /\balways (?:give me|use|show|write)\s+(bullet points?|numbered lists?|markdown|plain text|code blocks?|prose|headers?)\b/i, category: "response_style", durability: "semi_durable", reason: "format_preference", confidence: 0.88 },
-
-  // Project / team defaults
-  { pattern: new RegExp("\\bwe(?:\\u0027re|\\u2019re| are) (?:using|going with)\\s+([^.!?\\n]+?)\\s+(?:for|as|in)\\s+(?:our|this|all|the)\\b", "i"), category: "project", durability: "semi_durable", reason: "tech_decision", confidence: 0.84 },
-  { pattern: /\bwe standardi[sz]e on\s+([^.!?\n]+)/i, category: "project", durability: "semi_durable", reason: "project_standard", confidence: 0.9 },
-  { pattern: /\bour stack is\s+([^.!?\n]+)/i, category: "project", durability: "semi_durable", reason: "project_stack", confidence: 0.86 },
+  {
+    pattern: /\bremember(?:\s+that)?\s+([^.!?\n]+)/i,
+    category: "project",
+    durability: "semi_durable",
+    reason: "explicit_memory_request",
+    confidence: 0.99,
+    explicit: true,
+  },
 ];
 
 const RETRIEVAL_PATTERNS: RegExp[] = [
@@ -65,8 +45,6 @@ const SENSITIVE_PATTERNS: RegExp[] = [
 ];
 
 const STYLE_HINTS = /\b(concise|brief|short|verbose|detailed|bullet points?|markdown|plain text)\b/i;
-const NEGATIVE_HINTS = /\b(don(?:\u0027|’)t|avoid|never)\b/i;
-const CODING_ACTION_HINTS = /\b(use|default to|prefer|always use|never use|avoid|standardi[sz]e on)\b/i;
 const CODING_CONTEXT_HINTS = /\b(code|coding|implementation|implement|function|script|library|framework|stack|tool|tooling|test|testing|formatter|lint|cli|backend|frontend|language|daemon)\b/i;
 
 function normalizeMemoryText(text: string): string {
@@ -78,53 +56,14 @@ function normalizeMemoryText(text: string): string {
     .replace(/[.]+$/, "");
 }
 
-function canonicalizeCandidateText(category: MemoryCategory, sourceText: string, extracted: string, reason: string): string {
-  const negativeBase = extracted
-    .replace(/^(?:never|don(?:\u0027|’)t|please don(?:\u0027|’)t)\s+/i, "")
-    .replace(/^use\s+/i, "");
-
-  switch (reason) {
-    case "address_preference":
-    case "identity_fact":
-      return `Call user ${extracted}`;
-    case "role_identity":
-      return `User is a ${extracted}`;
-    case "expertise":
-      return `User has experience with ${extracted}`;
-    case "stated_preference":
-    case "habitual_preference":
-      return `User prefers ${extracted}`;
-    case "workflow_default":
-      return `User normally uses ${extracted}`;
-    case "project_default":
-    case "default_preference":
-      return `Default to ${extracted}`;
-    case "format_preference":
-      return `User prefers ${extracted} format`;
-    case "tech_decision":
-    case "project_standard":
-    case "project_stack":
-      return `Team uses ${extracted}`;
-    case "negative_preference":
-    case "strong_preference":
-      return /^user /i.test(extracted) ? extracted : `User avoids ${negativeBase}`;
-    default:
-      break;
-  }
-  if (category === "coding_pref" && /\bby default\b/i.test(sourceText)) {
-    return `Default to ${extracted}`;
-  }
+function canonicalizeCandidateText(_category: MemoryCategory, _sourceText: string, extracted: string, _reason: string): string {
   return extracted;
 }
 
-function inferCategory(text: string, fallback: MemoryCategory, reason: string): MemoryCategory {
-  if (/\b(call me|name is|nickname)\b/i.test(text)) return "identity";
-  if (["project_standard", "project_stack", "tech_decision"].includes(reason)) return "project";
-  if (reason === "workflow_default") return "workflow";
-  if (reason === "project_default") return "coding_pref";
-  if (CODING_ACTION_HINTS.test(text) && CODING_CONTEXT_HINTS.test(text)) return "coding_pref";
-  if (NEGATIVE_HINTS.test(text) && STYLE_HINTS.test(text)) return "response_style";
+function inferCategory(text: string, fallback: MemoryCategory, _reason: string): MemoryCategory {
+  if (/\b(call me|my name|nickname)\b/i.test(text)) return "identity";
   if (STYLE_HINTS.test(text)) return "response_style";
+  if (CODING_CONTEXT_HINTS.test(text)) return "coding_pref";
   return fallback;
 }
 
@@ -187,11 +126,13 @@ export function scoreMemoryText(memoryText: string, queryTokens: string[], categ
   return score;
 }
 
-export function evaluateCandidatePromotion(candidate: MemoryCandidate, signal: LocalSignal): {
-  score: number;
-  shouldPromote: boolean;
-  reasons: string[];
-} {
+// The extractor can suggest an action, but local policy makes the final decision.
+// This keeps persistence deterministic, testable, and easy to tune by mode.
+export function evaluateCandidateDecision(
+  candidate: MemoryCandidate,
+  signal: LocalSignal,
+  mode: NoodleExtractorMode = "balanced",
+): MemoryPolicyDecision {
   let score = 0;
   const reasons: string[] = [];
 
@@ -267,8 +208,54 @@ export function evaluateCandidatePromotion(candidate: MemoryCandidate, signal: L
     reasons.push("durable");
   }
 
-  const shouldPromote = candidate.explicit || score >= 5;
-  return { score, shouldPromote, reasons };
+  const sensitivity = candidate.metadata["sensitivity"];
+  if (sensitivity === "sensitive") {
+    reasons.push("sensitive_blocked");
+    return {
+      action: "discard",
+      score,
+      shouldPromote: false,
+      reasons,
+    };
+  }
+
+  if (candidate.explicit) {
+    return { action: "save", score, shouldPromote: true, reasons };
+  }
+
+  if (candidate.category === "identity" && signal.strongestConfidence >= 0.9) {
+    return { action: "save", score, shouldPromote: true, reasons };
+  }
+
+  if (mode === "conservative") {
+    if (score >= 7) return { action: "save", score, shouldPromote: true, reasons };
+    return { action: "discard", score, shouldPromote: false, reasons };
+  }
+
+  if (score >= (mode === "proactive" ? 6 : 5)) {
+    return { action: "save", score, shouldPromote: true, reasons };
+  }
+
+  const isPreferenceLike = candidate.category === "coding_pref" || candidate.category === "response_style" || candidate.category === "workflow" || candidate.category === "project";
+  const confidenceFloor = mode === "proactive" ? 0.65 : 0.72;
+  if (isPreferenceLike && signal.strongestConfidence >= confidenceFloor) {
+    return { action: "pending", score, shouldPromote: false, reasons };
+  }
+
+  return { action: "discard", score, shouldPromote: false, reasons };
+}
+
+export function evaluateCandidatePromotion(candidate: MemoryCandidate, signal: LocalSignal): {
+  score: number;
+  shouldPromote: boolean;
+  reasons: string[];
+} {
+  const decision = evaluateCandidateDecision(candidate, signal, "balanced");
+  return {
+    score: decision.score,
+    shouldPromote: decision.shouldPromote,
+    reasons: decision.reasons,
+  };
 }
 
 export function prefilterUserMessage(text: string): PrefilterResult {

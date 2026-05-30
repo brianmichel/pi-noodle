@@ -11,9 +11,8 @@ import {
   truncateToWidth,
 } from "@earendil-works/pi-tui";
 
-import { resolveConfigPath } from "./config.ts";
-import { EXTRACTOR_DEFAULT_MODEL } from "./memory/runtime.ts";
-import type { NoodleConfig, NoodleConfigPartial } from "./types.ts";
+import { DEFAULT_EXTRACTOR_MODE, defaultExtractorTriggerEvery, resolveConfigPath } from "./config.ts";
+import type { NoodleConfig, NoodleConfigPartial, NoodleExtractorMode } from "./types.ts";
 
 type DoneFn<T> = (result: T) => void;
 
@@ -47,9 +46,10 @@ type DraftConfig = {
   embeddingApiKey: string;
   embeddingBaseUrl: string;
   embeddingModel: string;
-  extractorEnabled: boolean;
+  extractorMode: NoodleExtractorMode;
   extractorModel: string;
   extractorTriggerEvery: string;
+  extractorDebug: boolean;
 };
 
 type ConfigScreenResult =
@@ -67,9 +67,10 @@ const FIELD = {
   EMBEDDING_API_KEY: "embeddingApiKey",
   EMBEDDING_BASE_URL: "embeddingBaseUrl",
   EMBEDDING_MODEL: "embeddingModel",
-  EXTRACTOR_ENABLED: "extractorEnabled",
+  EXTRACTOR_MODE: "extractorMode",
   EXTRACTOR_MODEL: "extractorModel",
   EXTRACTOR_TRIGGER_EVERY: "extractorTriggerEvery",
+  EXTRACTOR_DEBUG: "extractorDebug",
 } as const;
 
 export async function runConfigScreen(
@@ -145,14 +146,17 @@ export async function runConfigScreen(
         case FIELD.EMBEDDING_MODEL:
           draft.embeddingModel = value;
           break;
-        case FIELD.EXTRACTOR_ENABLED:
-          draft.extractorEnabled = value === "enabled";
+        case FIELD.EXTRACTOR_MODE:
+          draft.extractorMode = value === "off" || value === "conservative" || value === "proactive" ? value : "balanced";
           break;
         case FIELD.EXTRACTOR_MODEL:
           draft.extractorModel = value;
           break;
         case FIELD.EXTRACTOR_TRIGGER_EVERY:
           draft.extractorTriggerEvery = value;
+          break;
+        case FIELD.EXTRACTOR_DEBUG:
+          draft.extractorDebug = value === "on";
           break;
       }
 
@@ -357,20 +361,20 @@ function buildItems(
   }
 
   items.push({
-    id: FIELD.EXTRACTOR_ENABLED,
-    label: "LLM extractor",
-    currentValue: draft.extractorEnabled ? "enabled" : "disabled",
-    values: ["enabled", "disabled"],
-    description: "Automatically extracts durable facts from conversation turns.",
+    id: FIELD.EXTRACTOR_MODE,
+    label: "Memory mode",
+    currentValue: draft.extractorMode,
+    values: ["off", "conservative", "balanced", "proactive"],
+    description: "Off disables extraction. Conservative saves less, proactive discovers more, balanced is the default.",
   });
 
-  if (draft.extractorEnabled) {
+  if (draft.extractorMode !== "off") {
     items.push(
       textItem(
         FIELD.EXTRACTOR_MODEL,
         "Extractor model ID",
         draft.extractorModel,
-        "Pi model ID used for extraction. Leave default if unsure.",
+        "Pi model ID used for extraction. Change this to trade quality, speed, and cost.",
         tui,
         theme,
         applyChange,
@@ -379,11 +383,18 @@ function buildItems(
         FIELD.EXTRACTOR_TRIGGER_EVERY,
         "Extract every N turns",
         draft.extractorTriggerEvery,
-        "How often to run automatic extraction.",
+        "How often to run automatic extraction. Leave the mode default unless you want manual control.",
         tui,
         theme,
         applyChange,
       ),
+      {
+        id: FIELD.EXTRACTOR_DEBUG,
+        label: "Extractor debug widget",
+        currentValue: draft.extractorDebug ? "on" : "off",
+        values: ["off", "on"],
+        description: "Show the live extractor debug widget in Pi while developing.",
+      },
     );
   }
 
@@ -487,12 +498,14 @@ function labelForField(id: string): string {
       return "Embedding base URL";
     case FIELD.EMBEDDING_MODEL:
       return "Model name";
-    case FIELD.EXTRACTOR_ENABLED:
-      return "LLM extractor";
+    case FIELD.EXTRACTOR_MODE:
+      return "Memory mode";
     case FIELD.EXTRACTOR_MODEL:
       return "Extractor model ID";
     case FIELD.EXTRACTOR_TRIGGER_EVERY:
       return "Extract every N turns";
+    case FIELD.EXTRACTOR_DEBUG:
+      return "Extractor debug widget";
     default:
       return id;
   }
@@ -508,9 +521,10 @@ function createDraft(config: NoodleConfig): DraftConfig {
     embeddingApiKey: config.embedding.apiKey,
     embeddingBaseUrl: config.embedding.baseUrl,
     embeddingModel: config.embedding.model,
-    extractorEnabled: config.extractor?.enabled ?? false,
-    extractorModel: config.extractor?.model ?? EXTRACTOR_DEFAULT_MODEL,
-    extractorTriggerEvery: String(config.extractor?.triggerEvery ?? 10),
+    extractorMode: config.extractor?.mode ?? "off",
+    extractorModel: config.extractor?.model ?? "",
+    extractorTriggerEvery: String(config.extractor?.triggerEvery ?? defaultExtractorTriggerEvery(config.extractor?.mode ?? DEFAULT_EXTRACTOR_MODE)),
+    extractorDebug: config.extractor?.debug ?? false,
   };
 }
 
@@ -539,8 +553,10 @@ function applyProviderDefaults(draft: DraftConfig): void {
   }
 
   if (!draft.dbUrl) draft.dbUrl = "libsql://";
-  if (!draft.extractorModel) draft.extractorModel = EXTRACTOR_DEFAULT_MODEL;
-  if (!draft.extractorTriggerEvery) draft.extractorTriggerEvery = "10";
+  if (!draft.extractorModel) draft.extractorModel = "";
+  if (!draft.extractorTriggerEvery) {
+    draft.extractorTriggerEvery = String(defaultExtractorTriggerEvery(draft.extractorMode ?? DEFAULT_EXTRACTOR_MODE));
+  }
 }
 
 function validateDraft(draft: DraftConfig): string[] {
@@ -574,7 +590,7 @@ function validateDraft(draft: DraftConfig): string[] {
     if (!draft.embeddingModel.trim()) errors.push("Model name is required.");
   }
 
-  if (draft.extractorEnabled) {
+  if (draft.extractorMode !== "off") {
     const n = parseInt(draft.extractorTriggerEvery.trim(), 10);
     if (Number.isNaN(n) || n < 1) {
       errors.push("Extract every N turns must be a positive integer.");
@@ -599,13 +615,14 @@ function toPartial(draft: DraftConfig): NoodleConfigPartial {
       baseUrl: draft.embeddingBaseUrl.trim(),
       model: draft.embeddingModel.trim(),
     },
-    extractor: draft.extractorEnabled
+    extractor: draft.extractorMode !== "off"
       ? {
-          enabled: true,
-          model: draft.extractorModel.trim() || EXTRACTOR_DEFAULT_MODEL,
-          triggerEvery: parseInt(draft.extractorTriggerEvery.trim(), 10) || 10,
+          mode: draft.extractorMode,
+          ...(draft.extractorModel.trim() ? { model: draft.extractorModel.trim() } : {}),
+          triggerEvery: parseInt(draft.extractorTriggerEvery.trim(), 10) || defaultExtractorTriggerEvery(draft.extractorMode),
+          debug: draft.extractorDebug,
         }
-      : { enabled: false },
+      : { mode: "off" },
   };
 
   if (draft.embeddingProvider === "openai") {
@@ -626,9 +643,9 @@ function buildSummary(draft: DraftConfig): string[] {
   return [
     `Database: ${draft.dbMode}  ${draft.dbMode === "cloud" ? draft.dbUrl.trim() : draft.dbPath.trim()}`,
     `Embedding: ${draft.embeddingProvider}  ${draft.embeddingModel.trim() || draft.embeddingBaseUrl.trim()}`,
-    draft.extractorEnabled
-      ? `Extractor: enabled  ${draft.extractorModel.trim() || EXTRACTOR_DEFAULT_MODEL}  every ${parseInt(draft.extractorTriggerEvery.trim(), 10) || 10} turns`
-      : "Extractor: disabled",
+    draft.extractorMode !== "off" && draft.extractorModel.trim()
+      ? `Memory mode: ${draft.extractorMode}  ${draft.extractorModel.trim()}  every ${parseInt(draft.extractorTriggerEvery.trim(), 10) || defaultExtractorTriggerEvery(draft.extractorMode)} turns  debug ${draft.extractorDebug ? "on" : "off"}`
+      : "Memory mode: off",
   ];
 }
 

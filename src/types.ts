@@ -1,16 +1,26 @@
 export type NoodleDbMode = "local" | "cloud";
 
+export type NoodleExtractorMode = "off" | "conservative" | "balanced" | "proactive";
+
 export type NoodleExtractorConfig = {
-  /** Whether LLM-based extraction is active. */
-  enabled: boolean;
+  /**
+   * Behavior profile for proactive extraction.
+   * off = disable extractor
+   * conservative = fewer runs, higher save threshold
+   * balanced = default tradeoff
+   * proactive = more candidate discovery, more review load
+   */
+  mode?: NoodleExtractorMode;
   /**
    * Model ID to use for extraction (e.g. "claude-haiku-4-5-20251001").
-   * Must be a model already configured in Pi. Defaults to Pi's currently
-   * active model when unset.
+   * Must be a model already configured in Pi. Defaults to Pi's configured
+   * extractor default when unset.
    */
   model?: string;
-  /** Number of user turns between automatic extraction runs. Defaults to 10. */
+  /** Number of user turns between automatic extraction runs. Defaults by mode when unset. */
   triggerEvery?: number;
+  /** Show the extractor debug widget in Pi while developing. */
+  debug?: boolean;
 };
 
 export type NoodleConfig = {

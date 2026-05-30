@@ -22,20 +22,20 @@ function recordTexts(records: MemoryRecord[]): string[] {
   return records.map((record) => record.text);
 }
 
-test("quality eval: remembers durable facts and ignores temporary/sensitive details", async () => {
+test("quality eval: remembers explicit durable requests and ignores temporary/sensitive details", async () => {
   const { service, close } = await createService();
 
   try {
-    assert.equal(service.queueAutomaticCapture("My name is Brian."), true);
+    assert.equal(service.queueAutomaticCapture("Remember that my name is Brian."), true);
     await flushPendingWrites();
 
-    assert.equal(service.queueAutomaticCapture("For this task, be extra verbose."), false);
-    assert.equal(service.queueAutomaticCapture("My API key is sk-secret-value"), false);
+    assert.equal(service.queueAutomaticCapture("Remember that for this task, be extra verbose."), false);
+    assert.equal(service.queueAutomaticCapture("Remember this API key sk-secret-value"), false);
 
     const saved = await service.list();
     const texts = recordTexts(saved);
 
-    assert.ok(texts.includes("Call user Brian"));
+    assert.ok(texts.includes("my name is Brian"));
     assert.ok(texts.every((text) => !/verbose|sk-secret-value|api key/i.test(text)));
   } finally {
     close();
@@ -46,16 +46,11 @@ test("quality eval: retrieves relevant memories and avoids unrelated injection w
   const { service, close } = await createService();
 
   try {
-    for (let i = 0; i < 3; i += 1) {
-      service.queueAutomaticCapture("Use TypeScript by default for backend code.");
-      await flushPendingWrites();
-    }
-
-    assert.equal(service.queueAutomaticCapture("My name is Brian."), true);
+    assert.equal(service.queueAutomaticCapture("Remember that I prefer TypeScript for backend code."), true);
     await flushPendingWrites();
 
     const coding = await service.findRelevantMemories("How should I implement this backend function?", 3);
-    assert.ok(coding.some((record) => /Default to TypeScript/i.test(record.text)));
+    assert.ok(coding.some((record) => /TypeScript/i.test(record.text)));
 
     const generic = await service.findRelevantMemories("What is the capital of France?", 3);
     assert.deepEqual(generic, []);
@@ -68,13 +63,11 @@ test("quality eval: respects explicit forget and update against stored records",
   const { service, close } = await createService();
 
   try {
-    for (let i = 0; i < 3; i += 1) {
-      service.queueAutomaticCapture("Use Go by default for daemon code.");
-      await flushPendingWrites();
-    }
+    service.queueAutomaticCapture("Remember that I prefer Go for daemon code.");
+    await flushPendingWrites();
 
     const before = await service.findRelevantMemories("What language should I use for daemon code?", 5);
-    const go = before.find((record) => /Default to Go/i.test(record.text));
+    const go = before.find((record) => /prefer Go/i.test(record.text));
     assert.ok(go?.id);
 
     await service.delete(go!.id!);
@@ -96,22 +89,20 @@ test("quality eval: respects explicit forget and update against stored records",
   }
 });
 
-test("quality eval: promotes softer preferences after reinforcement while blocking temporary soft prompts", async () => {
+test("quality eval: implicit preferences are ignored until an extractor produces candidates", async () => {
   const { service, close } = await createService();
 
   try {
     service.queueAutomaticCapture("I usually prefer concise TypeScript examples.");
     await flushPendingWrites();
-    service.queueAutomaticCapture("I usually prefer concise TypeScript examples.");
-    await flushPendingWrites();
-
-    service.queueAutomaticCapture("For this task, I usually prefer very verbose explanations.");
-    await flushPendingWrites();
 
     const saved = await service.list();
-    const texts = recordTexts(saved);
-    assert.ok(texts.some((text) => /concise TypeScript examples/i.test(text)));
-    assert.ok(texts.every((text) => !/very verbose explanations/i.test(text)));
+    const pending = service.listPendingCandidates();
+    const retrieved = await service.findRelevantMemories("Can you show a TypeScript example?", 5);
+
+    assert.equal(saved.length, 0);
+    assert.equal(pending.length, 0);
+    assert.deepEqual(retrieved, []);
   } finally {
     close();
   }

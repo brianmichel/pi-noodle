@@ -66,7 +66,7 @@ function createDeps(overrides?: (Partial<MemoryExtensionDeps> & {
         calls.queueAutomaticCapture.push(text);
         return true;
       },
-      queueLLMExtraction(_sessionManager, model, target) {
+      queueLLMExtraction(_sessionManager, model, target, _extractionOptions) {
         calls.queueLLMExtraction.push(target ? { model, target } : { model });
         return true;
       },
@@ -81,7 +81,7 @@ function createDeps(overrides?: (Partial<MemoryExtensionDeps> & {
         return memories;
       },
     },
-    extractorEnabled: false,
+    extractorMode: "off",
     extractorTriggerEvery: 2,
     async flushPendingWrites() {
       calls.flushPendingWrites += 1;
@@ -107,7 +107,10 @@ function createCtx() {
   return {
     ui: { notify: () => undefined },
     model,
-    modelRegistry: { getAll: () => [model, { id: "extractor-model" } as Model<Api>] },
+    modelRegistry: {
+      getAll: () => [model, { id: "extractor-model" } as Model<Api>],
+      getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "sk-test", headers: {} }),
+    },
     sessionManager: createFakeSessionManager(),
   };
 }
@@ -131,7 +134,7 @@ test("memory extension injects relevant memories into the agent prompt", async (
 test("memory extension queues automatic capture and extractor on the configured turn cadence", async () => {
   const pi = createFakePi();
   const { deps, calls } = createDeps({
-    extractorEnabled: true,
+    extractorMode: "balanced",
     extractorModelId: "extractor-model",
     extractorTriggerEvery: 2,
   });
@@ -153,9 +156,71 @@ test("memory extension queues automatic capture and extractor on the configured 
   assert.equal((calls.queueLLMExtraction[0]?.model as { id: string }).id, "extractor-model");
 });
 
+test("memory extension skips extraction when model id not found in registry", async () => {
+  const pi = createFakePi();
+  const { deps, calls } = createDeps({
+    extractorMode: "balanced",
+    extractorModelId: "nonexistent-model",
+    extractorTriggerEvery: 2,
+  });
+
+  createMemoryExtension(deps)(pi as never);
+
+  const handler = pi.hooks.get("input");
+  assert.ok(handler);
+
+  const ctx = createCtx();
+  await handler!({ source: "user", text: "Remember this." }, ctx);
+  await handler!({ source: "user", text: "And this." }, ctx);
+
+  // Automatic capture should fire, but LLM extraction should not
+  assert.equal(calls.queueAutomaticCapture.length, 2);
+  assert.equal(calls.queueLLMExtraction.length, 0);
+});
+
+test("memory extension skips extraction when no extractor model is configured", async () => {
+  const pi = createFakePi();
+  const { deps, calls } = createDeps({
+    extractorMode: "balanced",
+    // extractorModelId left undefined
+    extractorTriggerEvery: 2,
+  });
+
+  createMemoryExtension(deps)(pi as never);
+
+  const handler = pi.hooks.get("input");
+  assert.ok(handler);
+
+  const ctx = createCtx();
+  await handler!({ source: "user", text: "Remember this." }, ctx);
+  await handler!({ source: "user", text: "And this." }, ctx);
+
+  assert.equal(calls.queueLLMExtraction.length, 0);
+});
+
+test("memory extension can run extractor every turn in proactive setups", async () => {
+  const pi = createFakePi();
+  const { deps, calls } = createDeps({
+    extractorMode: "proactive",
+    extractorModelId: "extractor-model",
+    extractorTriggerEvery: 1,
+  });
+
+  createMemoryExtension(deps)(pi as never);
+
+  const handler = pi.hooks.get("input");
+  assert.ok(handler);
+
+  const ctx = createCtx();
+  await handler!({ source: "user", text: "I usually prefer concise examples." }, ctx);
+  await handler!({ source: "user", text: "Use TypeScript by default." }, ctx);
+
+  assert.equal(calls.queueLLMExtraction.length, 2);
+});
+
 test("memory extension captures session transitions and flushes writes on shutdown", async () => {
   const pi = createFakePi();
-  const { deps, calls } = createDeps({ extractorEnabled: true, extractorModelId: "extractor-model" });
+  const { deps, calls } = createDeps({ extractorMode: "balanced", extractorModelId: "extractor-model" });
 
   createMemoryExtension(deps)(pi as never);
 

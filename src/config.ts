@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { NoodleConfig, NoodleConfigPartial } from "./types.ts";
+import type { NoodleConfig, NoodleConfigPartial, NoodleExtractorMode } from "./types.ts";
 
 // ---------------------------------------------------------------------------
 // Paths — user-level, not project-level (memories travel with the user)
@@ -17,6 +17,22 @@ export function resolveConfigPath(): string {
 // Defaults
 // ---------------------------------------------------------------------------
 
+export const DEFAULT_EXTRACTOR_MODE: NoodleExtractorMode = "balanced";
+export const DISABLED_EXTRACTOR_MODE: NoodleExtractorMode = "off";
+
+export function defaultExtractorTriggerEvery(mode: NoodleExtractorMode = DEFAULT_EXTRACTOR_MODE): number {
+  switch (mode) {
+    case "conservative":
+      return 20;
+    case "proactive":
+      return 5;
+    case "off":
+    case "balanced":
+    default:
+      return 10;
+  }
+}
+
 const DEFAULTS: NoodleConfig = {
   db: {
     mode: "local",
@@ -27,6 +43,11 @@ const DEFAULTS: NoodleConfig = {
     apiKey: "",
     baseUrl: "https://api.openai.com/v1",
     model: "text-embedding-3-small",
+  },
+  extractor: {
+    mode: DISABLED_EXTRACTOR_MODE,
+    triggerEvery: defaultExtractorTriggerEvery(DEFAULT_EXTRACTOR_MODE),
+    debug: false,
   },
 };
 
@@ -64,21 +85,39 @@ export function resolveConfig(): NoodleConfig {
   }
 
   // Extractor env overrides
-  if (env["NOODLE_EXTRACTOR_ENABLED"] !== undefined) {
-    if (!config.extractor) config.extractor = { enabled: false };
-    config.extractor.enabled = env["NOODLE_EXTRACTOR_ENABLED"] !== "false";
+  if (env["NOODLE_EXTRACTOR_MODE"]) {
+    const mode = env["NOODLE_EXTRACTOR_MODE"];
+    if (mode === "off" || mode === "conservative" || mode === "balanced" || mode === "proactive") {
+      if (!config.extractor) config.extractor = {};
+      config.extractor.mode = mode;
+      if (!config.extractor.triggerEvery || config.extractor.triggerEvery < 1) {
+        config.extractor.triggerEvery = defaultExtractorTriggerEvery(mode === "off" ? DEFAULT_EXTRACTOR_MODE : mode);
+      }
+    }
   }
   if (env["NOODLE_EXTRACTOR_MODEL"]) {
-    if (!config.extractor) config.extractor = { enabled: true };
+    if (!config.extractor) config.extractor = {};
     config.extractor.model = env["NOODLE_EXTRACTOR_MODEL"];
-    config.extractor.enabled = true;
+    config.extractor.mode ??= DEFAULT_EXTRACTOR_MODE;
   }
   if (env["NOODLE_EXTRACTOR_TRIGGER_EVERY"]) {
     const n = parseInt(env["NOODLE_EXTRACTOR_TRIGGER_EVERY"], 10);
     if (!isNaN(n) && n > 0) {
-      if (!config.extractor) config.extractor = { enabled: true };
+      if (!config.extractor) config.extractor = {};
       config.extractor.triggerEvery = n;
     }
+  }
+  if (env["NOODLE_EXTRACTOR_DEBUG"]) {
+    if (!config.extractor) config.extractor = {};
+    config.extractor.debug = ["1", "true", "yes", "on"].includes(env["NOODLE_EXTRACTOR_DEBUG"].toLowerCase());
+  }
+
+  if (config.extractor) {
+    config.extractor.mode ??= DISABLED_EXTRACTOR_MODE;
+    config.extractor.triggerEvery = config.extractor.triggerEvery && config.extractor.triggerEvery > 0
+      ? config.extractor.triggerEvery
+      : defaultExtractorTriggerEvery(config.extractor.mode === "off" ? DEFAULT_EXTRACTOR_MODE : config.extractor.mode);
+    config.extractor.debug ??= false;
   }
 
   return config;

@@ -104,7 +104,13 @@ export type LocalSignal = {
   lastRetrievedAt?: number;
   promotedAt?: number;
   lastPromotionScore?: number;
+  lastDecisionAction?: MemoryPolicyAction;
 };
+
+export type MemoryPolicyAction = "save" | "pending" | "discard";
+
+export type ExtractionStability = "stable" | "likely_stable" | "uncertain";
+export type ExtractionSensitivity = "safe" | "sensitive";
 
 export type ExtractionCandidate = {
   text: string;
@@ -112,6 +118,16 @@ export type ExtractionCandidate = {
   durability: MemoryDurability;
   confidence: number;
   reason: string;
+  stability: ExtractionStability;
+  sensitivity: ExtractionSensitivity;
+  suggestedAction: MemoryPolicyAction;
+};
+
+export type MemoryPolicyDecision = {
+  action: MemoryPolicyAction;
+  score: number;
+  shouldPromote: boolean;
+  reasons: string[];
 };
 
 export type ConsolidationReport = {

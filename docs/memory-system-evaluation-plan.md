@@ -11,12 +11,19 @@ The system should be judged on user-visible outcomes:
 - It retrieves the right memories at the right time.
 - It avoids injecting irrelevant memories.
 - It respects explicit forget/update requests.
+- It lets us compare conservative vs balanced vs proactive behavior without code changes.
+- It keeps pending-review memories from affecting retrieval quality.
 
 ## 1. Define Eval Case Types
 
 ### Capture evals
 
 Test whether the system saves the right things.
+
+Run these in each extractor mode where relevant:
+- `conservative` — should bias toward precision and lower recall
+- `balanced` — should be the default tradeoff
+- `proactive` — should discover more candidates without leaking sensitive/transient memories
 
 Examples:
 
@@ -59,6 +66,21 @@ Example:
 3. Good answer mentions Turso, TypeScript, and the existing memory interface.
 
 ## 2. Eval Case Shape
+
+Also track:
+- whether the memory was **saved**
+- whether it remained **pending review**
+- whether it was correctly **discarded**
+- whether retrieval used only saved memories
+
+## 3. Suggested Metrics
+
+- **save precision** — of saved memories, how many are correct and useful?
+- **pending rate** — how often does the system surface medium-confidence memories for review?
+- **retrieval usefulness** — does retrieval improve the answer?
+- **irrelevant injection rate** — how often does retrieval bring in the wrong thing?
+- **sensitivity error rate** — how often does blocked content leak through?
+- **mode deltas** — compare saved count, pending count, and retrieval usefulness across conservative / balanced / proactive
 
 ```ts
 type MemoryEvalCase = {
