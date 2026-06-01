@@ -1,10 +1,10 @@
-import type { Api, Model } from "@earendil-works/pi-ai";
-
 import { DEFAULT_AGENT_ID } from "../constants.ts";
 import {
+  noteExtractorQueued,
   noteExtractorRunFailed,
   noteExtractorRunFinished,
   noteExtractorRunStarted,
+  noteExtractorSkipped,
 } from "../debug-overlay.ts";
 import { enqueueWriteTask } from "../queue.ts";
 import {
@@ -14,7 +14,8 @@ import {
   selectExtractorMessages,
   selectMemoryWorthMessages,
 } from "../session.ts";
-import type { JsonObject, NotificationTarget, SessionManagerLike } from "../types.ts";
+import type { JsonObject } from "../types.ts";
+import type { NoodleExtractorMode, NotificationTarget } from "../types.ts";
 import type { MemoryBackend } from "./backend.ts";
 import { extractMemoriesFromMessages } from "./extractor.ts";
 import { deriveProjectKey } from "./project-identity.ts";
@@ -27,31 +28,134 @@ import {
 } from "./policy.ts";
 import type {
   AddMemoryInput,
+  ExtractionCandidate,
   LocalSignal,
   MemoryCandidate,
+  MemoryCaptureEvent,
+  MemoryCapturePlan,
+  MemoryCaptureResult,
   MemoryCategory,
+  MemoryExtractorResolution,
   MemoryRecord,
   MemorySearchInput,
   MemoryScope,
   UpdateMemoryInput,
 } from "./types.ts";
-import type { NoodleExtractorMode } from "../types.ts";
+
+const DEFAULT_EXTRACTOR_TRIGGER_EVERY = 10;
+
+type ExtractMemoriesFn = typeof extractMemoriesFromMessages;
+
+type MemoryServiceOptions = {
+  extractorMode?: NoodleExtractorMode;
+  extractorTriggerEvery?: number;
+  projectKeyResolver?: () => string | null;
+  extractMemoriesFromMessages?: ExtractMemoriesFn;
+};
+
+type QueueCandidateOptions = {
+  countIncrement?: number;
+  target?: NotificationTarget;
+  label?: string;
+  extraMetadata?: JsonObject;
+};
+
+type ExtractorRunOptions = {
+  sessionManager: MemoryCaptureEvent["sessionManager"];
+  reason: string;
+  target?: NotificationTarget;
+  resolve: () => Promise<MemoryExtractorResolution | null>;
+};
+
+type ConversationCaptureOptions = {
+  sessionManager: MemoryCaptureEvent["sessionManager"];
+  reason: string;
+  target?: NotificationTarget;
+  successMessage?: string;
+};
+
+export function planMemoryCaptureEvent(
+  event: MemoryCaptureEvent,
+  options: {
+    extractorMode: NoodleExtractorMode;
+    extractorTriggerEvery: number;
+    sessionTurnCount: number;
+    hasHeuristicCandidates: boolean;
+  },
+): MemoryCapturePlan {
+  const canExtract = options.extractorMode !== "off" && !!event.extractor;
+
+  switch (event.type) {
+    case "user_input": {
+      const runLlmExtraction = canExtract && (
+        options.hasHeuristicCandidates
+        || options.sessionTurnCount % Math.max(1, options.extractorTriggerEvery) === 0
+      );
+
+      return {
+        runHeuristics: true,
+        runLlmExtraction,
+        captureConversation: false,
+        consolidate: false,
+        extractionReason: options.hasHeuristicCandidates ? "automatic_capture" : "scheduled",
+      };
+    }
+    case "session_before_compact":
+      return {
+        runHeuristics: false,
+        runLlmExtraction: canExtract,
+        captureConversation: true,
+        consolidate: false,
+        extractionReason: "before_compact",
+        conversationReason: "before_compact",
+      };
+    case "session_before_switch":
+      return {
+        runHeuristics: false,
+        runLlmExtraction: canExtract,
+        captureConversation: true,
+        consolidate: false,
+        extractionReason: `before_switch:${event.reason}`,
+        conversationReason: `before_switch:${event.reason}`,
+      };
+    case "session_shutdown":
+      if (event.reason === "reload") {
+        return {
+          runHeuristics: false,
+          runLlmExtraction: false,
+          captureConversation: false,
+          consolidate: false,
+        };
+      }
+      return {
+        runHeuristics: false,
+        runLlmExtraction: canExtract,
+        captureConversation: true,
+        consolidate: true,
+        extractionReason: `shutdown:${event.reason}`,
+        conversationReason: `shutdown:${event.reason}`,
+      };
+  }
+}
 
 export class MemoryService {
   private readonly localSignals = new Map<string, LocalSignal>();
   private readonly recentlySaved = new Set<string>();
+  private readonly savedSessionSignatures = new Set<string>();
   private readonly backend: MemoryBackend;
   private readonly extractorMode: NoodleExtractorMode;
+  private readonly extractorTriggerEvery: number;
   private readonly projectKeyResolver: () => string | null;
+  private readonly extractMemories: ExtractMemoriesFn;
   private cachedProjectKey?: string | null;
+  private sessionTurnCount = 0;
 
-  constructor(
-    backend: MemoryBackend,
-    options?: { extractorMode?: NoodleExtractorMode; projectKeyResolver?: () => string | null },
-  ) {
+  constructor(backend: MemoryBackend, options?: MemoryServiceOptions) {
     this.backend = backend;
     this.extractorMode = options?.extractorMode ?? "balanced";
+    this.extractorTriggerEvery = Math.max(1, options?.extractorTriggerEvery ?? DEFAULT_EXTRACTOR_TRIGGER_EVERY);
     this.projectKeyResolver = options?.projectKeyResolver ?? (() => deriveProjectKey());
+    this.extractMemories = options?.extractMemoriesFromMessages ?? extractMemoriesFromMessages;
   }
 
   add(input: AddMemoryInput): Promise<void> {
@@ -103,161 +207,65 @@ export class MemoryService {
     });
   }
 
-  queueAutomaticCapture(text: string, target?: NotificationTarget): boolean {
-    const prefilter = prefilterUserMessage(text);
-    if (!prefilter.hasCandidate) return false;
+  async capture(event: MemoryCaptureEvent): Promise<MemoryCaptureResult> {
+    if (event.type === "user_input") {
+      this.sessionTurnCount += 1;
+    }
 
-    let queued = false;
+    const prefilter = event.type === "user_input"
+      ? prefilterUserMessage(event.text)
+      : { hasCandidate: false, candidates: [] };
 
-    for (const candidate of prefilter.candidates) {
-      if (this.handleCandidate(candidate, {
-        label: "Memory automatic capture",
-        ...(target ? { target } : {}),
-      })) {
-        queued = true;
+    const plan = planMemoryCaptureEvent(event, {
+      extractorMode: this.extractorMode,
+      extractorTriggerEvery: this.extractorTriggerEvery,
+      sessionTurnCount: this.sessionTurnCount,
+      hasHeuristicCandidates: prefilter.hasCandidate,
+    });
+
+    let automaticCaptureQueued = false;
+    if (plan.runHeuristics && prefilter.hasCandidate) {
+      for (const candidate of prefilter.candidates) {
+        if (this.handleCandidate(candidate, {
+          label: "Memory automatic capture",
+          ...(event.target ? { target: event.target } : {}),
+        })) {
+          automaticCaptureQueued = true;
+        }
       }
     }
 
-    return queued;
-  }
+    let conversationCaptureQueued = false;
+    if (plan.captureConversation && plan.conversationReason) {
+      conversationCaptureQueued = this.queueConversationCapture({
+        sessionManager: event.sessionManager,
+        reason: plan.conversationReason,
+        ...(event.target ? { target: event.target } : {}),
+      });
+    }
 
-  async captureSessionConversation(
-    sessionManager: SessionManagerLike,
-    reason: string,
-    savedSignatures: Set<string>,
-    options?: { target?: NotificationTarget; successMessage?: string },
-  ): Promise<boolean> {
-    const signature = buildSessionSignature(sessionManager);
-    if (savedSignatures.has(signature)) return false;
+    let llmExtractionQueued = false;
+    if (plan.runLlmExtraction && event.extractor && plan.extractionReason) {
+      llmExtractionQueued = await this.queueExtractorRun({
+        sessionManager: event.sessionManager,
+        reason: plan.extractionReason,
+        ...(event.target ? { target: event.target } : {}),
+        resolve: event.extractor.resolve,
+      });
+    }
 
-    const messages = selectMemoryWorthMessages(collectSessionMessages(sessionManager));
-    if (messages.length < 2) return false;
+    let consolidationQueued = false;
+    if (plan.consolidate) {
+      consolidationQueued = this.queueConsolidationInternal(event.target);
+    }
 
-    savedSignatures.add(signature);
-    enqueueWriteTask({
-      label: "Memory session capture",
-      ...(options?.target ? { target: options.target } : {}),
-      ...(options?.successMessage ? { successMessage: options.successMessage } : {}),
-      onFailure: () => {
-        savedSignatures.delete(signature);
-      },
-      task: async () => {
-        if (this.backend.captureConversation) {
-          await this.backend.captureConversation({
-            messages,
-            metadata: {
-              source: "pi-session-wrapup",
-              reason,
-              session_file: sessionManager.getSessionFile?.() || null,
-            },
-            scope: this.withDefaultScope(),
-          });
-          return;
-        }
-
-        await this.add({
-          messages,
-          metadata: {
-            source: "pi-session-wrapup",
-            reason,
-            session_file: sessionManager.getSessionFile?.() || null,
-          },
-        });
-      },
-    });
-
-    return true;
-  }
-
-  queueLLMExtraction(
-    sessionManager: SessionManagerLike,
-    model: Model<Api> | undefined,
-    target?: NotificationTarget,
-    extractionOptions?: { apiKey?: string; headers?: Record<string, string> },
-  ): boolean {
-    if (!model) return false;
-
-    const messages = selectExtractorMessages(collectSessionMessages(sessionManager));
-    if (messages.length < 4) return false;
-
-    enqueueWriteTask({
-      label: "Memory LLM extraction",
-      ...(target ? { target } : {}),
-      onFailure: () => {
-        noteExtractorRunFailed("LLM extraction failed");
-      },
-      task: async () => {
-        noteExtractorRunStarted();
-        const candidates = await extractMemoriesFromMessages(messages, model, {
-          ...(extractionOptions?.apiKey ? { apiKey: extractionOptions.apiKey } : {}),
-          ...(extractionOptions?.headers ? { headers: extractionOptions.headers } : {}),
-        });
-        let savedCount = 0;
-        const extractedTexts: string[] = [];
-
-        for (const extracted of candidates) {
-          if (extracted.confidence < 0.58) continue;
-          extractedTexts.push(extracted.text);
-
-          const candidate: MemoryCandidate = {
-            text: extracted.text,
-            normalized: extracted.text.toLowerCase(),
-            category: extracted.category,
-            durability: extracted.durability,
-            applicability: extracted.applicability,
-            source: "llm_extracted",
-            confidence: extracted.confidence,
-            explicit: false,
-            reasons: [extracted.reason],
-            metadata: {
-              trigger: extracted.reason,
-              stability: extracted.stability,
-              sensitivity: extracted.sensitivity,
-              suggested_action: extracted.suggestedAction,
-              applicability: extracted.applicability,
-              ...(extracted.applicabilityConfidence !== undefined
-                ? { applicability_confidence: extracted.applicabilityConfidence }
-                : {}),
-              ...(extracted.applicabilityReason
-                ? { applicability_reason: extracted.applicabilityReason }
-                : {}),
-            },
-          };
-
-          if (this.handleCandidate(candidate, {
-            countIncrement: extracted.confidence >= 0.85 ? 2 : 1,
-            label: "Memory LLM extraction",
-            ...(target ? { target } : {}),
-            extraMetadata: {
-              extractor_reinforced: true,
-              extractor_stability: extracted.stability,
-              extractor_sensitivity: extracted.sensitivity,
-              extractor_suggested_action: extracted.suggestedAction,
-            },
-          })) {
-            savedCount += 1;
-          }
-        }
-
-        noteExtractorRunFinished(extractedTexts, savedCount);
-      },
-    });
-
-    return true;
-  }
-
-  queueConsolidation(target?: NotificationTarget): void {
-    if (!this.backend.consolidate) return;
-
-    const consolidate = this.backend.consolidate.bind(this.backend);
-
-    enqueueWriteTask({
-      label: "Memory consolidation",
-      ...(target ? { target } : {}),
-      task: async () => {
-        await consolidate();
-      },
-    });
+    return {
+      plan,
+      automaticCaptureQueued,
+      llmExtractionQueued,
+      conversationCaptureQueued,
+      consolidationQueued,
+    };
   }
 
   // Pending candidates stay review-only in v1 so retrieval quality is based on
@@ -318,17 +326,129 @@ export class MemoryService {
     return "saved";
   }
 
+  private queueConversationCapture(options: ConversationCaptureOptions): boolean {
+    const signature = buildSessionSignature(options.sessionManager);
+    if (this.savedSessionSignatures.has(signature)) return false;
+
+    const messages = selectMemoryWorthMessages(collectSessionMessages(options.sessionManager));
+    if (messages.length < 2) return false;
+
+    this.savedSessionSignatures.add(signature);
+    enqueueWriteTask({
+      label: "Memory session capture",
+      ...(options.target ? { target: options.target } : {}),
+      ...(options.successMessage ? { successMessage: options.successMessage } : {}),
+      onFailure: () => {
+        this.savedSessionSignatures.delete(signature);
+      },
+      task: async () => {
+        if (this.backend.captureConversation) {
+          await this.backend.captureConversation({
+            messages,
+            metadata: {
+              source: "pi-session-wrapup",
+              reason: options.reason,
+              session_file: options.sessionManager.getSessionFile?.() || null,
+            },
+            scope: this.withDefaultScope(),
+          });
+          return;
+        }
+
+        await this.add({
+          messages,
+          metadata: {
+            source: "pi-session-wrapup",
+            reason: options.reason,
+            session_file: options.sessionManager.getSessionFile?.() || null,
+          },
+        });
+      },
+    });
+
+    return true;
+  }
+
+  private async queueExtractorRun(options: ExtractorRunOptions): Promise<boolean> {
+    const resolved = await options.resolve();
+    if (!resolved?.model || !resolved.apiKey) {
+      noteExtractorSkipped("extractor model not configured");
+      return false;
+    }
+
+    const messages = selectExtractorMessages(collectSessionMessages(options.sessionManager));
+    if (messages.length < 4) {
+      noteExtractorSkipped(
+        options.reason.startsWith("shutdown:")
+          ? "shutdown run skipped: not enough memory-worthy context yet"
+          : "not enough memory-worthy context yet",
+      );
+      return false;
+    }
+
+    noteExtractorQueued(options.reason, resolved.model.id);
+    enqueueWriteTask({
+      label: "Memory LLM extraction",
+      ...(options.target ? { target: options.target } : {}),
+      onFailure: () => {
+        noteExtractorRunFailed("LLM extraction failed");
+      },
+      task: async () => {
+        noteExtractorRunStarted();
+        const candidates = await this.extractMemories(messages, resolved.model, {
+          apiKey: resolved.apiKey,
+          ...(resolved.headers ? { headers: resolved.headers } : {}),
+        });
+        let savedCount = 0;
+        const extractedTexts: string[] = [];
+
+        for (const extracted of candidates) {
+          if (extracted.confidence < 0.58) continue;
+          extractedTexts.push(extracted.text);
+
+          const candidate = buildCandidateFromExtraction(extracted);
+
+          if (this.handleCandidate(candidate, {
+            countIncrement: extracted.confidence >= 0.85 ? 2 : 1,
+            label: "Memory LLM extraction",
+            ...(options.target ? { target: options.target } : {}),
+            extraMetadata: {
+              extractor_reinforced: true,
+              extractor_stability: extracted.stability,
+              extractor_sensitivity: extracted.sensitivity,
+              extractor_suggested_action: extracted.suggestedAction,
+            },
+          })) {
+            savedCount += 1;
+          }
+        }
+
+        noteExtractorRunFinished(extractedTexts, savedCount);
+      },
+    });
+
+    return true;
+  }
+
+  private queueConsolidationInternal(target?: NotificationTarget): boolean {
+    if (!this.backend.consolidate) return false;
+
+    const consolidate = this.backend.consolidate.bind(this.backend);
+
+    enqueueWriteTask({
+      label: "Memory consolidation",
+      ...(target ? { target } : {}),
+      task: async () => {
+        await consolidate();
+      },
+    });
+
+    return true;
+  }
+
   // Heuristic and LLM candidates share one promotion pipeline so settings,
   // dedupe, metadata, and policy decisions stay consistent across sources.
-  private handleCandidate(
-    candidate: MemoryCandidate,
-    options?: {
-      countIncrement?: number;
-      target?: NotificationTarget;
-      label?: string;
-      extraMetadata?: JsonObject;
-    },
-  ): boolean {
+  private handleCandidate(candidate: MemoryCandidate, options?: QueueCandidateOptions): boolean {
     const candidateWithContext = this.bindCandidateProjectContext(candidate);
     const signal = this.recordCandidateEvidence(
       candidateWithContext,
@@ -491,6 +611,33 @@ export class MemoryService {
       return !!currentProjectKey && projectKey === currentProjectKey;
     });
   }
+}
+
+function buildCandidateFromExtraction(extracted: ExtractionCandidate): MemoryCandidate {
+  return {
+    text: extracted.text,
+    normalized: extracted.text.toLowerCase(),
+    category: extracted.category,
+    durability: extracted.durability,
+    applicability: extracted.applicability,
+    source: "llm_extracted",
+    confidence: extracted.confidence,
+    explicit: false,
+    reasons: [extracted.reason],
+    metadata: {
+      trigger: extracted.reason,
+      stability: extracted.stability,
+      sensitivity: extracted.sensitivity,
+      suggested_action: extracted.suggestedAction,
+      applicability: extracted.applicability,
+      ...(extracted.applicabilityConfidence !== undefined
+        ? { applicability_confidence: extracted.applicabilityConfidence }
+        : {}),
+      ...(extracted.applicabilityReason
+        ? { applicability_reason: extracted.applicabilityReason }
+        : {}),
+    },
+  };
 }
 
 function buildPromotionMetadata(

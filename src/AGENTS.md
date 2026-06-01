@@ -22,6 +22,8 @@ This project uses mise to provide a unified interface into dependencies and task
 ## Dead Code & Comments
 
 - Delete dead code. Do not deprecate it, alias it, or leave it behind "for consumers." This is a private monorepo, not a published library.
+- When a refactor replaces an interface or flow, remove the superseded entrypoints in the same change. Do not keep compatibility wrappers, transitional fallbacks, or duplicate code paths unless the user explicitly asks for a staged migration.
+- Update tests and callers to the new seam instead of preserving the old one.
 - Do not add decorative section-divider comments (e.g. `// -----------`).
 - Do not add comments that restate what the code already says.
 - JSDoc on public package exports is expected.

@@ -4,8 +4,13 @@ import assert from "node:assert/strict";
 import type { Api, Model } from "@earendil-works/pi-ai";
 
 import { createMemoryExtension, type MemoryExtensionDeps } from "../src/extension.ts";
-import type { MemoryRecord } from "../src/memory/types.ts";
-import type { NotificationTarget, SessionManagerLike } from "../src/types.ts";
+import type {
+  MemoryCaptureEvent,
+  MemoryCaptureResult,
+  MemoryExtractorResolution,
+  MemoryRecord,
+} from "../src/memory/types.ts";
+import type { SessionManagerLike } from "../src/types.ts";
 
 type HookHandler = (...args: any[]) => unknown;
 
@@ -51,10 +56,8 @@ function createDeps(overrides?: (Partial<MemoryExtensionDeps> & {
   memories?: MemoryRecord[];
 })) {
   const calls = {
-    queueAutomaticCapture: [] as string[],
-    queueLLMExtraction: [] as Array<{ model: Model<Api> | undefined; target?: NotificationTarget }>,
-    captureSessionConversation: [] as string[],
-    queueConsolidation: 0,
+    captures: [] as MemoryCaptureEvent[],
+    extractorResolutions: [] as Array<MemoryExtractorResolution | null>,
     flushPendingWrites: 0,
   };
 
@@ -62,20 +65,22 @@ function createDeps(overrides?: (Partial<MemoryExtensionDeps> & {
 
   const deps: MemoryExtensionDeps = {
     memoryService: {
-      queueAutomaticCapture(text) {
-        calls.queueAutomaticCapture.push(text);
-        return true;
-      },
-      queueLLMExtraction(_sessionManager, model, target, _extractionOptions) {
-        calls.queueLLMExtraction.push(target ? { model, target } : { model });
-        return true;
-      },
-      queueConsolidation() {
-        calls.queueConsolidation += 1;
-      },
-      async captureSessionConversation(_sessionManager, reason) {
-        calls.captureSessionConversation.push(reason);
-        return true;
+      async capture(event) {
+        calls.captures.push(event);
+        const resolution = event.extractor ? await event.extractor.resolve() : null;
+        calls.extractorResolutions.push(resolution);
+        return {
+          plan: {
+            runHeuristics: event.type === "user_input",
+            runLlmExtraction: !!event.extractor,
+            captureConversation: event.type !== "user_input",
+            consolidate: event.type === "session_shutdown" && event.reason !== "reload",
+          },
+          automaticCaptureQueued: event.type === "user_input",
+          llmExtractionQueued: !!resolution,
+          conversationCaptureQueued: event.type !== "user_input",
+          consolidationQueued: event.type === "session_shutdown" && event.reason !== "reload",
+        } satisfies MemoryCaptureResult;
       },
       async findRelevantMemories() {
         return memories;
@@ -131,7 +136,7 @@ test("memory extension injects relevant memories into the agent prompt", async (
   assert.match((result as { systemPrompt: string }).systemPrompt, /Team uses Turso/);
 });
 
-test("memory extension queues automatic capture and extractor on the configured turn cadence", async () => {
+test("memory extension forwards user input as one capture event with extractor context", async () => {
   const pi = createFakePi();
   const { deps, calls } = createDeps({
     extractorMode: "balanced",
@@ -146,22 +151,35 @@ test("memory extension queues automatic capture and extractor on the configured 
 
   const ctx = createCtx();
   await handler!({ source: "user", text: "Remember that I prefer concise replies." }, ctx);
-  await handler!({ source: "user", text: "My name is Brian." }, ctx);
 
-  assert.deepEqual(calls.queueAutomaticCapture, [
-    "Remember that I prefer concise replies.",
-    "My name is Brian.",
-  ]);
-  assert.equal(calls.queueLLMExtraction.length, 1);
-  assert.equal((calls.queueLLMExtraction[0]?.model as { id: string }).id, "extractor-model");
+  assert.equal(calls.captures.length, 1);
+  assert.deepEqual(calls.captures[0]?.type, "user_input");
+  assert.equal((calls.captures[0] as Extract<MemoryCaptureEvent, { type: "user_input" }>).text, "Remember that I prefer concise replies.");
+  assert.equal(calls.extractorResolutions.length, 1);
+  assert.equal(calls.extractorResolutions[0]?.model.id, "extractor-model");
 });
 
-test("memory extension skips extraction when model id not found in registry", async () => {
+test("memory extension skips extractor resolution when extractor mode is off", async () => {
+  const pi = createFakePi();
+  const { deps, calls } = createDeps({ extractorMode: "off" });
+
+  createMemoryExtension(deps)(pi as never);
+
+  const handler = pi.hooks.get("input");
+  assert.ok(handler);
+
+  await handler!({ source: "user", text: "Remember this." }, createCtx());
+
+  assert.equal(calls.captures.length, 1);
+  assert.equal(calls.captures[0]?.extractor, undefined);
+  assert.deepEqual(calls.extractorResolutions, [null]);
+});
+
+test("memory extension passes unresolved extractor when model id is not found in registry", async () => {
   const pi = createFakePi();
   const { deps, calls } = createDeps({
     extractorMode: "balanced",
-    extractorModelId: "nonexistent-model",
-    extractorTriggerEvery: 2,
+    extractorModelId: "missing-model",
   });
 
   createMemoryExtension(deps)(pi as never);
@@ -169,56 +187,14 @@ test("memory extension skips extraction when model id not found in registry", as
   const handler = pi.hooks.get("input");
   assert.ok(handler);
 
-  const ctx = createCtx();
-  await handler!({ source: "user", text: "Remember this." }, ctx);
-  await handler!({ source: "user", text: "And this." }, ctx);
+  await handler!({ source: "user", text: "Remember this." }, createCtx());
 
-  // Automatic capture should fire, but LLM extraction should not
-  assert.equal(calls.queueAutomaticCapture.length, 2);
-  assert.equal(calls.queueLLMExtraction.length, 0);
+  assert.equal(calls.captures.length, 1);
+  assert.equal(calls.extractorResolutions.length, 1);
+  assert.equal(calls.extractorResolutions[0], null);
 });
 
-test("memory extension skips extraction when no extractor model is configured", async () => {
-  const pi = createFakePi();
-  const { deps, calls } = createDeps({
-    extractorMode: "balanced",
-    // extractorModelId left undefined
-    extractorTriggerEvery: 2,
-  });
-
-  createMemoryExtension(deps)(pi as never);
-
-  const handler = pi.hooks.get("input");
-  assert.ok(handler);
-
-  const ctx = createCtx();
-  await handler!({ source: "user", text: "Remember this." }, ctx);
-  await handler!({ source: "user", text: "And this." }, ctx);
-
-  assert.equal(calls.queueLLMExtraction.length, 0);
-});
-
-test("memory extension can run extractor every turn in proactive setups", async () => {
-  const pi = createFakePi();
-  const { deps, calls } = createDeps({
-    extractorMode: "proactive",
-    extractorModelId: "extractor-model",
-    extractorTriggerEvery: 1,
-  });
-
-  createMemoryExtension(deps)(pi as never);
-
-  const handler = pi.hooks.get("input");
-  assert.ok(handler);
-
-  const ctx = createCtx();
-  await handler!({ source: "user", text: "I usually prefer concise examples." }, ctx);
-  await handler!({ source: "user", text: "Use TypeScript by default." }, ctx);
-
-  assert.equal(calls.queueLLMExtraction.length, 2);
-});
-
-test("memory extension captures session transitions and flushes writes on shutdown", async () => {
+test("memory extension forwards session lifecycle events through the same capture seam", async () => {
   const pi = createFakePi();
   const { deps, calls } = createDeps({ extractorMode: "balanced", extractorModelId: "extractor-model" });
 
@@ -234,12 +210,31 @@ test("memory extension captures session transitions and flushes writes on shutdo
   await switchHook!({ reason: "branch" }, ctx);
   await shutdown!({ reason: "exit" }, ctx);
 
-  assert.deepEqual(calls.captureSessionConversation, [
-    "before_compact",
-    "before_switch:branch",
-    "shutdown:exit",
+  assert.deepEqual(calls.captures.map((event) => event.type), [
+    "session_before_compact",
+    "session_before_switch",
+    "session_shutdown",
   ]);
-  assert.equal(calls.queueConsolidation, 1);
+  assert.deepEqual(
+    calls.captures.map((event) => event.type === "session_before_switch" || event.type === "session_shutdown" ? event.reason : null),
+    [null, "branch", "exit"],
+  );
   assert.equal(calls.flushPendingWrites, 1);
-  assert.equal(calls.queueLLMExtraction.length, 1);
+});
+
+test("memory extension still flushes writes on reload shutdown", async () => {
+  const pi = createFakePi();
+  const { deps, calls } = createDeps({ extractorMode: "balanced", extractorModelId: "extractor-model" });
+
+  createMemoryExtension(deps)(pi as never);
+
+  const shutdown = pi.hooks.get("session_shutdown");
+  assert.ok(shutdown);
+
+  await shutdown!({ reason: "reload" }, createCtx());
+
+  assert.equal(calls.captures.length, 1);
+  assert.equal(calls.captures[0]?.type, "session_shutdown");
+  assert.equal((calls.captures[0] as Extract<MemoryCaptureEvent, { type: "session_shutdown" }>).reason, "reload");
+  assert.equal(calls.flushPendingWrites, 1);
 });

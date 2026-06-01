@@ -3,11 +3,12 @@ import assert from "node:assert/strict";
 
 import { flushPendingWrites } from "../src/queue.ts";
 import type { MemoryBackend } from "../src/memory/backend.ts";
-import { MemoryService } from "../src/memory/service.ts";
+import { MemoryService, planMemoryCaptureEvent } from "../src/memory/service.ts";
 import type {
   AddMemoryInput,
   ConversationCaptureInput,
-  MemoryCandidate,
+  ExtractionCandidate,
+  MemoryCaptureEvent,
   MemoryListInput,
   MemoryRecord,
   MemorySearchInput,
@@ -19,6 +20,7 @@ class FakeMemoryBackend implements MemoryBackend {
   public readonly updated: Array<{ id: string; input: UpdateMemoryInput }> = [];
   public readonly deleted: string[] = [];
   public readonly conversationCaptures: ConversationCaptureInput[] = [];
+  public readonly consolidations: number[] = [];
   public records: MemoryRecord[] = [];
 
   async add(input: AddMemoryInput): Promise<void> {
@@ -58,12 +60,134 @@ class FakeMemoryBackend implements MemoryBackend {
     this.conversationCaptures.push(input);
   }
 
+  async consolidate() {
+    this.consolidations.push(Date.now());
+    return { merged: 0, deleted: 0 };
+  }
+
   public readonly recordedRetrievals: string[][] = [];
 
   async recordRetrievals(ids: string[]): Promise<void> {
     this.recordedRetrievals.push(ids);
   }
 }
+
+function createSessionManager(messages: Array<{ role: "user" | "assistant"; content: string }>) {
+  return {
+    getBranch: () => messages.map((message) => ({
+      type: "message",
+      message: {
+        role: message.role,
+        content: [{ type: "text", text: message.content }],
+      },
+    })),
+    getSessionFile: () => "session.jsonl",
+    getLeafId: () => "leaf-1",
+  };
+}
+
+function createExtractor(candidates: ExtractionCandidate[]) {
+  return {
+    resolve: async () => ({
+      model: { id: "extractor-model" } as never,
+      apiKey: "sk-test",
+      headers: {},
+    }),
+    candidates,
+  };
+}
+
+test("capture planner runs heuristics every user turn and extraction on automatic-capture turns", () => {
+  const event: MemoryCaptureEvent = {
+    type: "user_input",
+    text: "Remember that I prefer concise TypeScript examples.",
+    sessionManager: createSessionManager([]),
+    extractor: createExtractor([]),
+  };
+
+  const plan = planMemoryCaptureEvent(event, {
+    extractorMode: "balanced",
+    extractorTriggerEvery: 10,
+    sessionTurnCount: 1,
+    hasHeuristicCandidates: true,
+  });
+
+  assert.deepEqual(plan, {
+    runHeuristics: true,
+    runLlmExtraction: true,
+    captureConversation: false,
+    consolidate: false,
+    extractionReason: "automatic_capture",
+  });
+});
+
+test("capture planner runs scheduled extraction on cadence turns without heuristic candidates", () => {
+  const event: MemoryCaptureEvent = {
+    type: "user_input",
+    text: "Hello there",
+    sessionManager: createSessionManager([]),
+    extractor: createExtractor([]),
+  };
+
+  const plan = planMemoryCaptureEvent(event, {
+    extractorMode: "balanced",
+    extractorTriggerEvery: 2,
+    sessionTurnCount: 2,
+    hasHeuristicCandidates: false,
+  });
+
+  assert.equal(plan.runHeuristics, true);
+  assert.equal(plan.runLlmExtraction, true);
+  assert.equal(plan.extractionReason, "scheduled");
+});
+
+test("capture planner maps shutdown events to extraction, conversation capture, and consolidation", () => {
+  const event: MemoryCaptureEvent = {
+    type: "session_shutdown",
+    reason: "exit",
+    sessionManager: createSessionManager([]),
+    extractor: createExtractor([]),
+  };
+
+  const plan = planMemoryCaptureEvent(event, {
+    extractorMode: "balanced",
+    extractorTriggerEvery: 10,
+    sessionTurnCount: 4,
+    hasHeuristicCandidates: false,
+  });
+
+  assert.deepEqual(plan, {
+    runHeuristics: false,
+    runLlmExtraction: true,
+    captureConversation: true,
+    consolidate: true,
+    extractionReason: "shutdown:exit",
+    conversationReason: "shutdown:exit",
+  });
+});
+
+test("capture planner skips shutdown capture work on reload", () => {
+  const event: MemoryCaptureEvent = {
+    type: "session_shutdown",
+    reason: "reload",
+    sessionManager: createSessionManager([]),
+    extractor: createExtractor([]),
+  };
+
+  const plan = planMemoryCaptureEvent(event, {
+    extractorMode: "balanced",
+    extractorTriggerEvery: 10,
+    sessionTurnCount: 4,
+    hasHeuristicCandidates: false,
+  });
+
+  assert.deepEqual(plan, {
+    runHeuristics: false,
+    runLlmExtraction: false,
+    captureConversation: false,
+    consolidate: false,
+  });
+});
 
 test("MemoryService dedupes novel candidates before writing", async () => {
   const backend = new FakeMemoryBackend();
@@ -130,18 +254,45 @@ test("MemoryService retrieval ranks relevant memories and skips chatter", async 
   assert.equal(backend.recordedRetrievals.length, 0);
 });
 
-test("MemoryService automatic capture saves explicit remember requests immediately", async () => {
+test("MemoryService capture can queue heuristic and LLM extraction work from one user-input event", async () => {
   const backend = new FakeMemoryBackend();
-  const service = new MemoryService(backend, { extractorMode: "balanced" });
+  const extractor = createExtractor([
+    {
+      text: "User prefers concise TypeScript examples",
+      category: "response_style",
+      durability: "semi_durable",
+      confidence: 0.92,
+      reason: "explicit_statement",
+      stability: "stable",
+      sensitivity: "safe",
+      suggestedAction: "save",
+      applicability: "user",
+    },
+  ]);
+  const service = new MemoryService(backend, {
+    extractorMode: "balanced",
+    extractorTriggerEvery: 10,
+    extractMemoriesFromMessages: async () => extractor.candidates,
+  });
 
-  const queued = service.queueAutomaticCapture("Remember that I prefer concise TypeScript examples.");
+  const result = await service.capture({
+    type: "user_input",
+    text: "Remember that I prefer concise TypeScript examples.",
+    sessionManager: createSessionManager([
+      { role: "user", content: "Remember that I prefer concise TypeScript examples." },
+      { role: "assistant", content: "Got it, I will keep TypeScript examples concise." },
+      { role: "user", content: "I usually want examples without long explanations." },
+      { role: "assistant", content: "Understood. I will optimize for concise examples." },
+    ]),
+    extractor: { resolve: extractor.resolve },
+  });
   await flushPendingWrites();
 
-  assert.equal(queued, true);
-  assert.equal(backend.added.length, 1);
-  assert.equal(backend.added[0]?.text, "I prefer concise TypeScript examples");
-  assert.equal(backend.added[0]?.metadata?.["applicability"], "user");
-  assert.equal(service.listPendingCandidates().length, 0);
+  assert.equal(result.plan.runHeuristics, true);
+  assert.equal(result.plan.runLlmExtraction, true);
+  assert.equal(result.automaticCaptureQueued, true);
+  assert.equal(result.llmExtractionQueued, true);
+  assert.ok(backend.added.some((input) => input.text === "I prefer concise TypeScript examples"));
 });
 
 test("MemoryService keeps explicit project memories pending when no project identity can be derived", async () => {
@@ -151,25 +302,38 @@ test("MemoryService keeps explicit project memories pending when no project iden
     projectKeyResolver: () => null,
   });
 
-  const queued = service.queueAutomaticCapture("Remember that I prefer plain TypeScript modules for the web viewer refactor.");
+  const result = await service.capture({
+    type: "user_input",
+    text: "Remember that I prefer plain TypeScript modules for the web viewer refactor.",
+    sessionManager: createSessionManager([{ role: "user", content: "Remember that I prefer plain TypeScript modules for the web viewer refactor." }]),
+  });
   await flushPendingWrites();
 
-  assert.equal(queued, false);
+  assert.equal(result.automaticCaptureQueued, false);
+  assert.equal(result.llmExtractionQueued, false);
   assert.equal(backend.added.length, 0);
   assert.equal(service.listPendingCandidates().length, 1);
   assert.equal(service.listPendingCandidates()[0]?.metadata?.["applicability"], "project");
 });
 
-test("MemoryService no longer heuristically captures implicit preferences", async () => {
+test("MemoryService capture skips extraction when context is too small", async () => {
   const backend = new FakeMemoryBackend();
-  const service = new MemoryService(backend, { extractorMode: "balanced" });
+  const service = new MemoryService(backend, {
+    extractorMode: "balanced",
+    extractMemoriesFromMessages: async () => [],
+  });
 
-  const queued = service.queueAutomaticCapture("I usually prefer concise TypeScript examples.");
+  const result = await service.capture({
+    type: "user_input",
+    text: "Remember that I prefer concise replies.",
+    sessionManager: createSessionManager([{ role: "user", content: "Remember that I prefer concise replies." }]),
+    extractor: { resolve: createExtractor([]).resolve },
+  });
   await flushPendingWrites();
 
-  assert.equal(queued, false);
-  assert.equal(service.listPendingCandidates().length, 0);
-  assert.equal(backend.added.length, 0);
+  assert.equal(result.automaticCaptureQueued, true);
+  assert.equal(result.llmExtractionQueued, false);
+  assert.equal(backend.added.length, 1);
 });
 
 test("MemoryService filters project memories to the active project key", async () => {
@@ -208,35 +372,6 @@ test("MemoryService filters project memories to the active project key", async (
   assert.ok(results.every((record) => record.text !== "Use Vue for the dashboard refresh"));
 });
 
-test("MemoryService keeps project memories pending when no project identity can be derived", async () => {
-  const backend = new FakeMemoryBackend();
-  const service = new MemoryService(backend, {
-    extractorMode: "balanced",
-    projectKeyResolver: () => null,
-  });
-
-  const queued = (service as unknown as {
-    handleCandidate: (candidate: MemoryCandidate) => boolean;
-  }).handleCandidate({
-    text: "User prefers plain TypeScript modules over Vue for this viewer refactor",
-    normalized: "user prefers plain typescript modules over vue for this viewer refactor",
-    category: "coding_pref",
-    durability: "semi_durable",
-    applicability: "project",
-    source: "llm_extracted",
-    confidence: 0.92,
-    explicit: false,
-    reasons: ["explicit_statement"],
-    metadata: { applicability: "project" },
-  });
-  await flushPendingWrites();
-
-  assert.equal(queued, false);
-  assert.equal(backend.added.length, 0);
-  assert.equal(service.listPendingCandidates().length, 1);
-  assert.equal(service.listPendingCandidates()[0]?.lastDecisionAction, "pending");
-});
-
 test("MemoryService forwards generic get, update, and delete operations", async () => {
   const backend = new FakeMemoryBackend();
   backend.records = [
@@ -260,30 +395,46 @@ test("MemoryService forwards generic get, update, and delete operations", async 
   assert.deepEqual(backend.deleted, ["1"]);
 });
 
-test("MemoryService captures session conversations through the backend", async () => {
+test("MemoryService capture archives conversation and triggers extraction on shutdown-style events", async () => {
   const backend = new FakeMemoryBackend();
-  const service = new MemoryService(backend);
-  const savedSignatures = new Set<string>();
+  const extractor = createExtractor([
+    {
+      text: "Project standardizes on concise memory summaries",
+      category: "project",
+      durability: "semi_durable",
+      confidence: 0.88,
+      reason: "repeated_pattern",
+      stability: "likely_stable",
+      sensitivity: "safe",
+      suggestedAction: "save",
+      applicability: "project",
+      applicabilityConfidence: 0.91,
+      applicabilityReason: "Tied to current codebase conventions",
+    },
+  ]);
+  const service = new MemoryService(backend, {
+    extractorMode: "balanced",
+    extractMemoriesFromMessages: async () => extractor.candidates,
+    projectKeyResolver: () => "github.com/acme/pi-noodle",
+  });
 
-  const sessionManager = {
-    getBranch: () => [
-      {
-        type: "message",
-        message: { role: "user", content: [{ type: "text", text: "Please remember that I prefer concise responses for code review replies." }] },
-      },
-      {
-        type: "message",
-        message: { role: "assistant", content: [{ type: "text", text: "Understood, I will keep code review replies concise." }] },
-      },
-    ],
-    getSessionFile: () => "session.jsonl",
-    getLeafId: () => "leaf-1",
-  };
-
-  const saved = await service.captureSessionConversation(sessionManager, "before_compact", savedSignatures);
+  const result = await service.capture({
+    type: "session_shutdown",
+    reason: "exit",
+    sessionManager: createSessionManager([
+      { role: "user", content: "We are standardizing on concise memory summaries for this project." },
+      { role: "assistant", content: "Understood, I will use concise memory summaries." },
+      { role: "user", content: "This should apply across the current repo only." },
+      { role: "assistant", content: "That sounds project-specific and stable enough to remember." },
+    ]),
+    extractor: { resolve: extractor.resolve },
+  });
   await flushPendingWrites();
 
-  assert.equal(saved, true);
+  assert.equal(result.conversationCaptureQueued, true);
+  assert.equal(result.llmExtractionQueued, true);
+  assert.equal(result.consolidationQueued, true);
   assert.equal(backend.conversationCaptures.length, 1);
-  assert.equal(backend.conversationCaptures[0]?.messages.length, 2);
+  assert.equal(backend.consolidations.length, 1);
+  assert.ok(backend.added.length > 0 || service.listPendingCandidates().length > 0);
 });

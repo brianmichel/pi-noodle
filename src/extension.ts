@@ -5,8 +5,6 @@ import { registerCommands as registerCommandsRuntime } from "./commands.ts";
 import {
   configureExtractorDebug,
   maybeStartExtractorDebugOverlay,
-  noteExtractorQueued,
-  noteExtractorSkipped,
   noteUserTurnForExtractorDebug,
 } from "./debug-overlay.ts";
 import {
@@ -16,28 +14,15 @@ import {
   extractorTriggerEvery as runtimeExtractorTriggerEvery,
   memoryService as runtimeMemoryService,
 } from "./memory/runtime.ts";
-import type { MemoryRecord } from "./memory/types.ts";
+import type { MemoryCaptureEvent, MemoryCaptureResult, MemoryExtractorResolution, MemoryRecord } from "./memory/types.ts";
 import { flushPendingWrites as flushPendingWritesRuntime } from "./session.ts";
 import { memoryTools as runtimeMemoryTools } from "./tools.ts";
-import type { NotificationTarget, NoodleExtractorMode, SessionManagerLike } from "./types.ts";
+import type { NoodleExtractorMode } from "./types.ts";
 
 type RegisteredTool = Parameters<ExtensionAPI["registerTool"]>[0];
 
 type MemoryServiceLike = {
-  queueAutomaticCapture: (text: string, target?: NotificationTarget) => boolean;
-  queueLLMExtraction: (
-    sessionManager: SessionManagerLike,
-    model: Model<Api> | undefined,
-    target?: NotificationTarget,
-    extractionOptions?: { apiKey?: string; headers?: Record<string, string> },
-  ) => boolean;
-  queueConsolidation: (target?: NotificationTarget) => void;
-  captureSessionConversation: (
-    sessionManager: SessionManagerLike,
-    reason: string,
-    savedSignatures: Set<string>,
-    options?: { target?: NotificationTarget; successMessage?: string },
-  ) => Promise<boolean>;
+  capture: (event: MemoryCaptureEvent) => Promise<MemoryCaptureResult>;
   findRelevantMemories: (prompt: string, limit?: number) => Promise<MemoryRecord[]>;
 };
 
@@ -59,7 +44,6 @@ type ExtractorModelRegistry = {
 
 type ExtractorContext = {
   modelRegistry: ExtractorModelRegistry;
-  sessionManager: SessionManagerLike;
 };
 
 const runtimeDeps: MemoryExtensionDeps = {
@@ -75,43 +59,13 @@ const runtimeDeps: MemoryExtensionDeps = {
 
 export function createMemoryExtension(deps: MemoryExtensionDeps = runtimeDeps) {
   return function memoryExtension(pi: ExtensionAPI) {
-    const savedSessionSignatures = new Set<string>();
-    let sessionMessageCount = 0;
-
     configureExtractorDebug(deps.extractorDebug ?? false, deps.extractorMode, deps.extractorTriggerEvery);
 
-    const captureSession = (
-      reason: string,
-      sessionManager: SessionManagerLike,
-      options?: { target?: NotificationTarget; successMessage?: string },
-    ) => deps.memoryService.captureSessionConversation(sessionManager, reason, savedSessionSignatures, options);
-
-    const maybeQueueExtraction = async (
-      reason: string,
-      ctx: ExtractorContext,
-      target?: NotificationTarget,
-    ): Promise<boolean> => {
-      if (deps.extractorMode === "off") return false;
-
-      const resolved = await resolveExtractorModel(deps.extractorModelId, ctx.modelRegistry);
-      if (!resolved) return false;
-
-      noteExtractorQueued(reason, resolved.model.id);
-      const queued = deps.memoryService.queueLLMExtraction(
-        ctx.sessionManager,
-        resolved.model,
-        target,
-        { apiKey: resolved.apiKey, ...(resolved.headers ? { headers: resolved.headers } : {}) },
-      );
-
-      if (!queued) {
-        noteExtractorSkipped(
-          reason.startsWith("shutdown:")
-            ? "shutdown run skipped: not enough memory-worthy context yet"
-            : "not enough memory-worthy context yet",
-        );
-      }
-      return queued;
+    const buildExtractor = (ctx: ExtractorContext): MemoryCaptureEvent["extractor"] | undefined => {
+      if (deps.extractorMode === "off") return undefined;
+      return {
+        resolve: () => resolveExtractorModel(deps.extractorModelId, ctx.modelRegistry),
+      };
     };
 
     pi.on("session_start", async (_event, ctx) => {
@@ -121,15 +75,15 @@ export function createMemoryExtension(deps: MemoryExtensionDeps = runtimeDeps) {
     pi.on("input", async (event, ctx) => {
       if (event.source === "extension") return { action: "continue" };
 
-      sessionMessageCount += 1;
       noteUserTurnForExtractorDebug();
-      deps.memoryService.queueAutomaticCapture(event.text, ctx);
-
-      const shouldExtract =
-        deps.extractorMode !== "off" && sessionMessageCount % deps.extractorTriggerEvery === 0;
-      if (shouldExtract) {
-        await maybeQueueExtraction("scheduled", ctx, ctx);
-      }
+      const extractor = buildExtractor(ctx);
+      await deps.memoryService.capture({
+        type: "user_input",
+        text: event.text,
+        sessionManager: ctx.sessionManager,
+        target: ctx,
+        ...(extractor ? { extractor } : {}),
+      });
 
       return { action: "continue" };
     });
@@ -148,19 +102,34 @@ export function createMemoryExtension(deps: MemoryExtensionDeps = runtimeDeps) {
     });
 
     pi.on("session_before_compact", async (_event, ctx) => {
-      await captureSession("before_compact", ctx.sessionManager, { target: ctx });
+      const extractor = buildExtractor(ctx);
+      await deps.memoryService.capture({
+        type: "session_before_compact",
+        sessionManager: ctx.sessionManager,
+        target: ctx,
+        ...(extractor ? { extractor } : {}),
+      });
     });
 
     pi.on("session_before_switch", async (event, ctx) => {
-      await captureSession(`before_switch:${event.reason}`, ctx.sessionManager, { target: ctx });
+      const extractor = buildExtractor(ctx);
+      await deps.memoryService.capture({
+        type: "session_before_switch",
+        reason: event.reason,
+        sessionManager: ctx.sessionManager,
+        target: ctx,
+        ...(extractor ? { extractor } : {}),
+      });
     });
 
     pi.on("session_shutdown", async (event, ctx) => {
-      if (event.reason !== "reload") {
-        await captureSession(`shutdown:${event.reason}`, ctx.sessionManager).catch(() => undefined);
-        await maybeQueueExtraction(`shutdown:${event.reason}`, ctx);
-        deps.memoryService.queueConsolidation();
-      }
+      const extractor = buildExtractor(ctx);
+      await deps.memoryService.capture({
+        type: "session_shutdown",
+        reason: event.reason,
+        sessionManager: ctx.sessionManager,
+        ...(extractor ? { extractor } : {}),
+      });
 
       await deps.flushPendingWrites();
     });
@@ -176,12 +145,11 @@ export function createMemoryExtension(deps: MemoryExtensionDeps = runtimeDeps) {
 async function resolveExtractorModel(
   extractorModelId: string | undefined,
   modelRegistry: ExtractorModelRegistry,
-): Promise<{ model: Model<Api>; apiKey: string; headers?: Record<string, string> } | null> {
+): Promise<MemoryExtractorResolution | null> {
   if (!extractorModelId) return null;
 
   const model = modelRegistry.getAll().find((candidate) => candidate.id === extractorModelId);
   if (!model) {
-    noteExtractorSkipped(`extractor model "${extractorModelId}" not found in registry`);
     return null;
   }
 

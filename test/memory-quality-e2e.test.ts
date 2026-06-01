@@ -6,7 +6,7 @@ import { createClient } from "@libsql/client";
 import { flushPendingWrites } from "../src/queue.ts";
 import { MemoryService } from "../src/memory/service.ts";
 import { TursoBackend } from "../src/memory/turso-backend.ts";
-import type { MemoryRecord } from "../src/memory/types.ts";
+import type { MemoryCaptureEvent, MemoryRecord } from "../src/memory/types.ts";
 import { fakeSemanticEmbedder } from "./helpers/fake-embedder.ts";
 
 async function createService(): Promise<{ service: MemoryService; close: () => void }> {
@@ -22,15 +22,33 @@ function recordTexts(records: MemoryRecord[]): string[] {
   return records.map((record) => record.text);
 }
 
+function createInputEvent(text: string): MemoryCaptureEvent {
+  return {
+    type: "user_input",
+    text,
+    sessionManager: {
+      getBranch: () => [{
+        type: "message",
+        message: {
+          role: "user",
+          content: [{ type: "text", text }],
+        },
+      }],
+      getSessionFile: () => "session.jsonl",
+      getLeafId: () => "leaf-1",
+    },
+  };
+}
+
 test("quality eval: remembers explicit durable requests and ignores temporary/sensitive details", async () => {
   const { service, close } = await createService();
 
   try {
-    assert.equal(service.queueAutomaticCapture("Remember that my name is Brian."), true);
+    assert.equal((await service.capture(createInputEvent("Remember that my name is Brian."))).automaticCaptureQueued, true);
     await flushPendingWrites();
 
-    assert.equal(service.queueAutomaticCapture("Remember that for this task, be extra verbose."), false);
-    assert.equal(service.queueAutomaticCapture("Remember this API key sk-secret-value"), false);
+    assert.equal((await service.capture(createInputEvent("Remember that for this task, be extra verbose."))).automaticCaptureQueued, false);
+    assert.equal((await service.capture(createInputEvent("Remember this API key sk-secret-value"))).automaticCaptureQueued, false);
 
     const saved = await service.list();
     const texts = recordTexts(saved);
@@ -46,7 +64,7 @@ test("quality eval: retrieves relevant memories and avoids unrelated injection w
   const { service, close } = await createService();
 
   try {
-    assert.equal(service.queueAutomaticCapture("Remember that I prefer TypeScript for backend code."), true);
+    assert.equal((await service.capture(createInputEvent("Remember that I prefer TypeScript for backend code."))).automaticCaptureQueued, true);
     await flushPendingWrites();
 
     const coding = await service.findRelevantMemories("How should I implement this backend function?", 3);
@@ -63,7 +81,7 @@ test("quality eval: respects explicit forget and update against stored records",
   const { service, close } = await createService();
 
   try {
-    service.queueAutomaticCapture("Remember that I prefer Go for daemon code.");
+    await service.capture(createInputEvent("Remember that I prefer Go for daemon code."));
     await flushPendingWrites();
 
     const before = await service.findRelevantMemories("What language should I use for daemon code?", 5);
@@ -93,7 +111,7 @@ test("quality eval: implicit preferences are ignored until an extractor produces
   const { service, close } = await createService();
 
   try {
-    service.queueAutomaticCapture("I usually prefer concise TypeScript examples.");
+    await service.capture(createInputEvent("I usually prefer concise TypeScript examples."));
     await flushPendingWrites();
 
     const saved = await service.list();

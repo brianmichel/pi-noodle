@@ -1,4 +1,6 @@
-import type { JsonObject } from "../types.ts";
+import type { Api, Model } from "@earendil-works/pi-ai";
+
+import type { JsonObject, NotificationTarget, SessionManagerLike } from "../types.ts";
 
 export type MemoryCategory =
   | "identity"
@@ -139,4 +141,52 @@ export type MemoryPolicyDecision = {
 export type ConsolidationReport = {
   merged: number;
   deleted: number;
+};
+
+export type MemoryExtractorResolution = {
+  model: Model<Api>;
+  apiKey: string;
+  headers?: Record<string, string>;
+};
+
+export type MemoryCaptureEventBase = {
+  sessionManager: SessionManagerLike;
+  target?: NotificationTarget;
+  extractor?: {
+    resolve: () => Promise<MemoryExtractorResolution | null>;
+  };
+};
+
+export type MemoryCaptureEvent =
+  | (MemoryCaptureEventBase & {
+      type: "user_input";
+      text: string;
+    })
+  | (MemoryCaptureEventBase & {
+      type: "session_before_compact";
+    })
+  | (MemoryCaptureEventBase & {
+      type: "session_before_switch";
+      reason: string;
+    })
+  | (MemoryCaptureEventBase & {
+      type: "session_shutdown";
+      reason: string;
+    });
+
+export type MemoryCapturePlan = {
+  runHeuristics: boolean;
+  runLlmExtraction: boolean;
+  captureConversation: boolean;
+  consolidate: boolean;
+  extractionReason?: string;
+  conversationReason?: string;
+};
+
+export type MemoryCaptureResult = {
+  plan: MemoryCapturePlan;
+  automaticCaptureQueued: boolean;
+  llmExtractionQueued: boolean;
+  conversationCaptureQueued: boolean;
+  consolidationQueued: boolean;
 };

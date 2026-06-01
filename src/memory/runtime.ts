@@ -57,6 +57,7 @@ function createBackend(config: NoodleConfig): MemoryBackend {
 const config = resolveConfig();
 export const memoryService = new MemoryService(createBackend(config), {
   extractorMode: config.extractor?.mode ?? DEFAULT_EXTRACTOR_MODE,
+  extractorTriggerEvery: config.extractor?.triggerEvery ?? defaultExtractorTriggerEvery((config.extractor?.mode ?? DEFAULT_EXTRACTOR_MODE) === "off" ? DEFAULT_EXTRACTOR_MODE : (config.extractor?.mode ?? DEFAULT_EXTRACTOR_MODE)),
 });
 
 /** Behavior profile for proactive extraction. */

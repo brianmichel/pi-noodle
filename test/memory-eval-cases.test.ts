@@ -6,7 +6,7 @@ import { createClient } from "@libsql/client";
 import { flushPendingWrites } from "../src/queue.ts";
 import { MemoryService } from "../src/memory/service.ts";
 import { TursoBackend } from "../src/memory/turso-backend.ts";
-import type { MemoryRecord } from "../src/memory/types.ts";
+import type { MemoryCaptureEvent, MemoryRecord } from "../src/memory/types.ts";
 import { fakeSemanticEmbedder } from "./helpers/fake-embedder.ts";
 
 type MemoryEvalCase = {
@@ -31,9 +31,27 @@ async function createService(): Promise<{ service: MemoryService; close: () => v
   };
 }
 
+function createInputEvent(text: string): MemoryCaptureEvent {
+  return {
+    type: "user_input",
+    text,
+    sessionManager: {
+      getBranch: () => [{
+        type: "message",
+        message: {
+          role: "user",
+          content: [{ type: "text", text }],
+        },
+      }],
+      getSessionFile: () => "session.jsonl",
+      getLeafId: () => "leaf-1",
+    },
+  };
+}
+
 async function captureMessages(service: MemoryService, messages: string[]): Promise<void> {
   for (const message of messages) {
-    service.queueAutomaticCapture(message);
+    await service.capture(createInputEvent(message));
     await flushPendingWrites();
   }
 }
