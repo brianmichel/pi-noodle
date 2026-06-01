@@ -7,6 +7,7 @@ import { MemoryService } from "../src/memory/service.ts";
 import type {
   AddMemoryInput,
   ConversationCaptureInput,
+  MemoryCandidate,
   MemoryListInput,
   MemoryRecord,
   MemorySearchInput,
@@ -139,7 +140,24 @@ test("MemoryService automatic capture saves explicit remember requests immediate
   assert.equal(queued, true);
   assert.equal(backend.added.length, 1);
   assert.equal(backend.added[0]?.text, "I prefer concise TypeScript examples");
+  assert.equal(backend.added[0]?.metadata?.["applicability"], "user");
   assert.equal(service.listPendingCandidates().length, 0);
+});
+
+test("MemoryService keeps explicit project memories pending when no project identity can be derived", async () => {
+  const backend = new FakeMemoryBackend();
+  const service = new MemoryService(backend, {
+    extractorMode: "balanced",
+    projectKeyResolver: () => null,
+  });
+
+  const queued = service.queueAutomaticCapture("Remember that I prefer plain TypeScript modules for the web viewer refactor.");
+  await flushPendingWrites();
+
+  assert.equal(queued, false);
+  assert.equal(backend.added.length, 0);
+  assert.equal(service.listPendingCandidates().length, 1);
+  assert.equal(service.listPendingCandidates()[0]?.metadata?.["applicability"], "project");
 });
 
 test("MemoryService no longer heuristically captures implicit preferences", async () => {
@@ -152,6 +170,71 @@ test("MemoryService no longer heuristically captures implicit preferences", asyn
   assert.equal(queued, false);
   assert.equal(service.listPendingCandidates().length, 0);
   assert.equal(backend.added.length, 0);
+});
+
+test("MemoryService filters project memories to the active project key", async () => {
+  const backend = new FakeMemoryBackend();
+  backend.records = [
+    {
+      id: "1",
+      text: "User prefers concise responses",
+      categories: ["response_style"],
+      metadata: { applicability: "user" },
+      category: "response_style",
+    },
+    {
+      id: "2",
+      text: "Use plain TypeScript modules for the web viewer refactor",
+      categories: ["coding_pref"],
+      metadata: { applicability: "project", project_key: "github.com/acme/pi-noodle" },
+      category: "coding_pref",
+    },
+    {
+      id: "3",
+      text: "Use Vue for the dashboard refresh",
+      categories: ["coding_pref"],
+      metadata: { applicability: "project", project_key: "github.com/acme/other-app" },
+      category: "coding_pref",
+    },
+  ];
+
+  const service = new MemoryService(backend, {
+    projectKeyResolver: () => "github.com/acme/pi-noodle",
+  });
+  const results = await service.findRelevantMemories("How should I refactor this frontend view?", 5);
+
+  assert.ok(results.some((record) => record.text === "User prefers concise responses"));
+  assert.ok(results.some((record) => record.text === "Use plain TypeScript modules for the web viewer refactor"));
+  assert.ok(results.every((record) => record.text !== "Use Vue for the dashboard refresh"));
+});
+
+test("MemoryService keeps project memories pending when no project identity can be derived", async () => {
+  const backend = new FakeMemoryBackend();
+  const service = new MemoryService(backend, {
+    extractorMode: "balanced",
+    projectKeyResolver: () => null,
+  });
+
+  const queued = (service as unknown as {
+    handleCandidate: (candidate: MemoryCandidate) => boolean;
+  }).handleCandidate({
+    text: "User prefers plain TypeScript modules over Vue for this viewer refactor",
+    normalized: "user prefers plain typescript modules over vue for this viewer refactor",
+    category: "coding_pref",
+    durability: "semi_durable",
+    applicability: "project",
+    source: "llm_extracted",
+    confidence: 0.92,
+    explicit: false,
+    reasons: ["explicit_statement"],
+    metadata: { applicability: "project" },
+  });
+  await flushPendingWrites();
+
+  assert.equal(queued, false);
+  assert.equal(backend.added.length, 0);
+  assert.equal(service.listPendingCandidates().length, 1);
+  assert.equal(service.listPendingCandidates()[0]?.lastDecisionAction, "pending");
 });
 
 test("MemoryService forwards generic get, update, and delete operations", async () => {

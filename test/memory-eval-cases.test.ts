@@ -14,6 +14,7 @@ type MemoryEvalCase = {
   messages: string[];
   expectedSaved?: string[];
   expectedNotSaved?: string[];
+  expectedMetadata?: Array<{ textIncludes: string; key: string; value: unknown }>;
   queries?: Array<{
     query: string;
     shouldRetrieve: string[];
@@ -59,6 +60,14 @@ const CASES: MemoryEvalCase[] = [
     expectedNotSaved: ["concise TypeScript examples"],
   },
   {
+    name: "classifies broad explicit preferences as user-applicable",
+    messages: ["Remember that I prefer concise TypeScript examples."],
+    expectedSaved: ["I prefer concise TypeScript examples"],
+    expectedMetadata: [
+      { textIncludes: "concise TypeScript examples", key: "applicability", value: "user" },
+    ],
+  },
+  {
     name: "does not capture temporary instructions even when phrased as remember",
     messages: ["Remember that for this task, be extra verbose."],
     expectedNotSaved: ["extra verbose"],
@@ -85,6 +94,12 @@ for (const evalCase of CASES) {
 
       for (const blocked of evalCase.expectedNotSaved ?? []) {
         assert.ok(savedTexts.every((text) => !text.toLowerCase().includes(blocked.toLowerCase())));
+      }
+
+      for (const expected of evalCase.expectedMetadata ?? []) {
+        const record = saved.find((entry) => entry.text.toLowerCase().includes(expected.textIncludes.toLowerCase()));
+        assert.ok(record, `expected saved memory containing ${expected.textIncludes}`);
+        assert.deepEqual(record.metadata[expected.key], expected.value);
       }
 
       for (const queryCase of evalCase.queries ?? []) {

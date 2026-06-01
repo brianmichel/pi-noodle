@@ -8,6 +8,7 @@ export type MemoryCategory =
   | "project";
 
 export type MemoryDurability = "durable" | "semi_durable" | "ephemeral";
+export type MemoryApplicability = "user" | "project" | "unknown";
 
 export type MemorySource = "explicit" | "heuristic" | "repetition" | "llm_extracted" | "consolidated";
 
@@ -73,6 +74,7 @@ export type MemoryCandidate = {
   normalized: string;
   category: MemoryCategory;
   durability: MemoryDurability;
+  applicability?: MemoryApplicability;
   source: MemorySource;
   confidence: number;
   explicit: boolean;
@@ -93,6 +95,7 @@ export type LocalSignal = {
   normalized: string;
   category: MemoryCategory;
   durability: MemoryDurability;
+  applicability?: MemoryApplicability;
   source: MemorySource;
   explicit: boolean;
   count: number;
@@ -121,6 +124,9 @@ export type ExtractionCandidate = {
   stability: ExtractionStability;
   sensitivity: ExtractionSensitivity;
   suggestedAction: MemoryPolicyAction;
+  applicability: MemoryApplicability;
+  applicabilityConfidence?: number;
+  applicabilityReason?: string;
 };
 
 export type MemoryPolicyDecision = {

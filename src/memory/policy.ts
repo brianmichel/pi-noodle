@@ -1,5 +1,6 @@
 import type {
   LocalSignal,
+  MemoryApplicability,
   MemoryCandidate,
   MemoryCategory,
   MemoryDurability,
@@ -46,6 +47,8 @@ const SENSITIVE_PATTERNS: RegExp[] = [
 
 const STYLE_HINTS = /\b(concise|brief|short|verbose|detailed|bullet points?|markdown|plain text)\b/i;
 const CODING_CONTEXT_HINTS = /\b(code|coding|implementation|implement|function|script|library|framework|stack|tool|tooling|test|testing|formatter|lint|cli|backend|frontend|language|daemon)\b/i;
+const GENERAL_APPLICABILITY_HINTS = /\b(in general|generally|usually|normally|by default|always|never|across projects?)\b/i;
+const PROJECT_APPLICABILITY_HINTS = /\b(for this project|in this project|for this repo|in this repo|for this codebase|in this codebase|for this app|for this feature|for this refactor|for this component|for the web viewer|for this viewer|current project|current codebase)\b/i;
 
 function normalizeMemoryText(text: string): string {
   return text
@@ -75,6 +78,14 @@ function inferDurability(text: string, fallback: MemoryDurability): MemoryDurabi
 function confidenceFor(entry: { confidence?: number }, category: MemoryCategory): number {
   if (typeof entry.confidence === "number") return entry.confidence;
   return category === "identity" ? 0.96 : 0.8;
+}
+
+function inferApplicability(text: string, category: MemoryCategory): MemoryApplicability {
+  if (PROJECT_APPLICABILITY_HINTS.test(text)) return "project";
+  if (GENERAL_APPLICABILITY_HINTS.test(text)) return "user";
+  if (category === "identity" || category === "response_style") return "user";
+  if (category === "project") return "project";
+  return "unknown";
 }
 
 export function buildSignalKey(candidate: MemoryCandidate): string {
@@ -285,17 +296,20 @@ export function prefilterUserMessage(text: string): PrefilterResult {
     const extracted = rawExtracted.replace(/^use\s+/i, "");
     const canonicalText = canonicalizeCandidateText(category, text, extracted, entry.reason);
     candidateReasons.add(entry.reason);
+    const applicability = inferApplicability(text, category);
     candidates.push({
       text: canonicalText,
       normalized: canonicalText.toLowerCase(),
       category,
       durability,
+      applicability,
       source: entry.reason === "explicit_memory_request" ? "explicit" : "heuristic",
       confidence: confidenceFor(entry, category),
       explicit: entry.explicit === true,
       reasons: [entry.reason],
       metadata: {
         trigger: entry.reason,
+        applicability,
       },
     });
   }

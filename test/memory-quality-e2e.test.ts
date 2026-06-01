@@ -108,6 +108,42 @@ test("quality eval: implicit preferences are ignored until an extractor produces
   }
 });
 
+test("quality eval: project memories only retrieve for the matching project key", async () => {
+  const db = createClient({ url: ":memory:" });
+  const backend = new TursoBackend(db, fakeSemanticEmbedder);
+  const service = new MemoryService(backend, { projectKeyResolver: () => "github.com/acme/pi-noodle" });
+
+  try {
+    await service.add({
+      text: "Use plain TypeScript modules for the web viewer refactor",
+      category: "coding_pref",
+      categories: ["coding_pref"],
+      metadata: { applicability: "project", project_key: "github.com/acme/pi-noodle" },
+    });
+    await service.add({
+      text: "Use Vue for the dashboard refresh",
+      category: "coding_pref",
+      categories: ["coding_pref"],
+      metadata: { applicability: "project", project_key: "github.com/acme/other-app" },
+    });
+    await service.add({
+      text: "User prefers concise responses",
+      category: "response_style",
+      categories: ["response_style"],
+      metadata: { applicability: "user" },
+    });
+
+    const retrieved = await service.findRelevantMemories("How should I refactor this frontend component?", 5);
+    const texts = recordTexts(retrieved);
+
+    assert.ok(texts.some((text) => /plain TypeScript modules/i.test(text)));
+    assert.ok(texts.some((text) => /concise responses/i.test(text)));
+    assert.ok(texts.every((text) => !/Use Vue for the dashboard refresh/i.test(text)));
+  } finally {
+    db.close();
+  }
+});
+
 test("quality eval: memory retrieval stays isolated across assistant, user, and session scopes", async () => {
   const db = createClient({ url: ":memory:" });
   const backend = new TursoBackend(db, fakeSemanticEmbedder);

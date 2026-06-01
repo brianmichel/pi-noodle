@@ -17,6 +17,7 @@ import {
 import type { JsonObject, NotificationTarget, SessionManagerLike } from "../types.ts";
 import type { MemoryBackend } from "./backend.ts";
 import { extractMemoriesFromMessages } from "./extractor.ts";
+import { deriveProjectKey } from "./project-identity.ts";
 import {
   buildSignalKey,
   categoriesForPrompt,
@@ -41,10 +42,16 @@ export class MemoryService {
   private readonly recentlySaved = new Set<string>();
   private readonly backend: MemoryBackend;
   private readonly extractorMode: NoodleExtractorMode;
+  private readonly projectKeyResolver: () => string | null;
+  private cachedProjectKey?: string | null;
 
-  constructor(backend: MemoryBackend, options?: { extractorMode?: NoodleExtractorMode }) {
+  constructor(
+    backend: MemoryBackend,
+    options?: { extractorMode?: NoodleExtractorMode; projectKeyResolver?: () => string | null },
+  ) {
     this.backend = backend;
     this.extractorMode = options?.extractorMode ?? "balanced";
+    this.projectKeyResolver = options?.projectKeyResolver ?? (() => deriveProjectKey());
   }
 
   add(input: AddMemoryInput): Promise<void> {
@@ -90,8 +97,9 @@ export class MemoryService {
       categories: categoriesForPrompt(prompt),
       scope: this.withDefaultScope(),
     }).then((results) => {
-      this.noteRetrievedMemories(results);
-      return results;
+      const filtered = this.filterMemoriesForCurrentProject(results);
+      this.noteRetrievedMemories(filtered);
+      return filtered;
     });
   }
 
@@ -196,6 +204,7 @@ export class MemoryService {
             normalized: extracted.text.toLowerCase(),
             category: extracted.category,
             durability: extracted.durability,
+            applicability: extracted.applicability,
             source: "llm_extracted",
             confidence: extracted.confidence,
             explicit: false,
@@ -205,6 +214,13 @@ export class MemoryService {
               stability: extracted.stability,
               sensitivity: extracted.sensitivity,
               suggested_action: extracted.suggestedAction,
+              applicability: extracted.applicability,
+              ...(extracted.applicabilityConfidence !== undefined
+                ? { applicability_confidence: extracted.applicabilityConfidence }
+                : {}),
+              ...(extracted.applicabilityReason
+                ? { applicability_reason: extracted.applicabilityReason }
+                : {}),
             },
           };
 
@@ -313,11 +329,18 @@ export class MemoryService {
       extraMetadata?: JsonObject;
     },
   ): boolean {
+    const candidateWithContext = this.bindCandidateProjectContext(candidate);
     const signal = this.recordCandidateEvidence(
-      candidate,
+      candidateWithContext,
       options?.countIncrement !== undefined ? { countIncrement: options.countIncrement } : undefined,
     );
-    const decision = evaluateCandidateDecision(candidate, signal, this.extractorMode);
+
+    if (candidateWithContext.applicability === "project" && typeof signal.metadata["project_key"] !== "string") {
+      signal.lastDecisionAction = "pending";
+      return false;
+    }
+
+    const decision = evaluateCandidateDecision(candidateWithContext, signal, this.extractorMode);
     signal.lastDecisionAction = decision.action;
 
     if (decision.action !== "save") {
@@ -336,7 +359,7 @@ export class MemoryService {
           signal,
           decision.score,
           decision.reasons,
-          buildPromotionMetadata(candidate, signal, decision.score, decision.reasons, this.extractorMode, options?.extraMetadata),
+          buildPromotionMetadata(candidateWithContext, signal, decision.score, decision.reasons, this.extractorMode, options?.extraMetadata),
         );
         if (result === "saved" || result === "merged") {
           signal.promotedAt = Date.now();
@@ -362,6 +385,7 @@ export class MemoryService {
       normalized: candidate.normalized,
       category: candidate.category,
       durability: candidate.durability,
+      ...(candidate.applicability ? { applicability: candidate.applicability } : {}),
       source: candidate.source,
       explicit: candidate.explicit,
       count: 0,
@@ -375,6 +399,7 @@ export class MemoryService {
     signal.normalized = candidate.normalized;
     signal.category = candidate.category;
     signal.durability = candidate.durability;
+    if (candidate.applicability) signal.applicability = candidate.applicability;
     signal.source = candidate.source;
     signal.explicit = signal.explicit || candidate.explicit;
     signal.count += options?.countIncrement ?? 1;
@@ -432,6 +457,39 @@ export class MemoryService {
       ...(scope?.userId ? { userId: scope.userId } : {}),
       ...(scope?.sessionId ? { sessionId: scope.sessionId } : {}),
     };
+  }
+
+  private currentProjectKey(): string | null {
+    if (this.cachedProjectKey !== undefined) return this.cachedProjectKey;
+    this.cachedProjectKey = this.projectKeyResolver();
+    return this.cachedProjectKey;
+  }
+
+  private bindCandidateProjectContext(candidate: MemoryCandidate): MemoryCandidate {
+    if (candidate.applicability !== "project") return candidate;
+    const projectKey = this.currentProjectKey();
+    if (!projectKey) return candidate;
+    return {
+      ...candidate,
+      metadata: {
+        ...candidate.metadata,
+        project_key: projectKey,
+      },
+    };
+  }
+
+  private filterMemoriesForCurrentProject(records: MemoryRecord[]): MemoryRecord[] {
+    const currentProjectKey = this.currentProjectKey();
+    return records.filter((record) => {
+      const applicability = typeof record.metadata["applicability"] === "string"
+        ? record.metadata["applicability"]
+        : "unknown";
+      if (applicability !== "project") return true;
+      const projectKey = typeof record.metadata["project_key"] === "string"
+        ? record.metadata["project_key"]
+        : null;
+      return !!currentProjectKey && projectKey === currentProjectKey;
+    });
   }
 }
 
@@ -518,6 +576,7 @@ function signalToCandidate(signal: LocalSignal): MemoryCandidate {
     normalized: signal.normalized,
     category: signal.category,
     durability: signal.durability,
+    ...(signal.applicability ? { applicability: signal.applicability } : {}),
     source: signal.source,
     confidence: signal.strongestConfidence,
     explicit: signal.explicit,

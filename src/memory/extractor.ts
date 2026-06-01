@@ -5,6 +5,7 @@ import type {
   ExtractionCandidate,
   ExtractionSensitivity,
   ExtractionStability,
+  MemoryApplicability,
   MemoryCategory,
   MemoryDurability,
   MemoryMessage,
@@ -21,11 +22,17 @@ Return a JSON array of memory objects. Each object must have:
 - "stability": one of "stable" | "likely_stable" | "uncertain"
 - "sensitivity": one of "safe" | "sensitive"
 - "suggestedAction": one of "save" | "pending" | "discard"
+- "applicability": one of "user" | "project" | "unknown"
+- "applicabilityConfidence": number 0.0–1.0
+- "applicabilityReason": string — short explanation for why this applies broadly vs to the current project
 
 Rules:
 - Only extract facts stable across sessions — not task-specific details
 - Prioritize user defaults, repeated habits, negative preferences, and project conventions likely to matter later
 - Prefer facts stated by the user over assistant speculation
+- "project" means the fact seems tied to the current codebase, product, feature, or initiative rather than the user's broad cross-project preference
+- Prefer "user" only when the user clearly states a general habit or default likely to apply across unrelated projects
+- Use "unknown" when the distinction is ambiguous
 - Skip: file contents, code snippets, transient decisions, error messages, tool results
 - Skip: credentials, API keys, tokens, passwords, private secrets, financial details, and medical details
 - Skip: conversational mechanics ("the user asked", "I replied")
@@ -45,6 +52,9 @@ type RawCandidate = {
   stability?: unknown;
   sensitivity?: unknown;
   suggestedAction?: unknown;
+  applicability?: unknown;
+  applicabilityConfidence?: unknown;
+  applicabilityReason?: unknown;
 };
 
 const VALID_CATEGORIES = new Set<string>(["identity", "response_style", "coding_pref", "workflow", "project"]);
@@ -52,6 +62,7 @@ const VALID_DURABILITIES = new Set<string>(["durable", "semi_durable"]);
 const VALID_STABILITIES = new Set<string>(["stable", "likely_stable", "uncertain"]);
 const VALID_SENSITIVITIES = new Set<string>(["safe", "sensitive"]);
 const VALID_ACTIONS = new Set<string>(["save", "pending", "discard"]);
+const VALID_APPLICABILITY = new Set<string>(["user", "project", "unknown"]);
 
 function normalizeStability(raw: unknown): ExtractionStability {
   return typeof raw === "string" && VALID_STABILITIES.has(raw) ? raw as ExtractionStability : "uncertain";
@@ -59,6 +70,10 @@ function normalizeStability(raw: unknown): ExtractionStability {
 
 function normalizeSensitivity(raw: unknown): ExtractionSensitivity {
   return typeof raw === "string" && VALID_SENSITIVITIES.has(raw) ? raw as ExtractionSensitivity : "safe";
+}
+
+function normalizeApplicability(raw: unknown): MemoryApplicability {
+  return typeof raw === "string" && VALID_APPLICABILITY.has(raw) ? raw as MemoryApplicability : "unknown";
 }
 
 function isValidCandidate(raw: unknown): raw is ExtractionCandidate {
@@ -93,6 +108,41 @@ function parseJsonArray(content: string): unknown[] {
     }
   }
   return [];
+}
+
+export function parseExtractedCandidates(content: string): ExtractionCandidate[] {
+  if (!content) return [];
+
+  const raw = parseJsonArray(content);
+
+  return raw
+    .filter(isValidCandidate)
+    .map((c) => {
+      const applicabilityConfidence = typeof (c as RawCandidate).applicabilityConfidence === "number"
+        ? ((c as RawCandidate).applicabilityConfidence as number)
+        : undefined;
+      const applicabilityReason = typeof (c as RawCandidate).applicabilityReason === "string"
+        ? ((c as RawCandidate).applicabilityReason as string)
+        : undefined;
+
+      return {
+        text: (c as ExtractionCandidate).text.trim(),
+        category: (c as ExtractionCandidate).category as MemoryCategory,
+        durability: (c as ExtractionCandidate).durability as MemoryDurability,
+        confidence: (c as ExtractionCandidate).confidence,
+        reason: typeof (c as RawCandidate).reason === "string"
+          ? ((c as RawCandidate).reason as string)
+          : "llm_extracted",
+        stability: normalizeStability((c as RawCandidate).stability),
+        sensitivity: normalizeSensitivity((c as RawCandidate).sensitivity),
+        suggestedAction: typeof (c as RawCandidate).suggestedAction === "string" && VALID_ACTIONS.has((c as RawCandidate).suggestedAction as string)
+          ? ((c as RawCandidate).suggestedAction as "save" | "pending" | "discard")
+          : "pending",
+        applicability: normalizeApplicability((c as RawCandidate).applicability),
+        ...(applicabilityConfidence !== undefined ? { applicabilityConfidence } : {}),
+        ...(applicabilityReason ? { applicabilityReason } : {}),
+      };
+    });
 }
 
 export async function extractMemoriesFromMessages(
@@ -135,24 +185,5 @@ export async function extractMemoriesFromMessages(
     .map((c) => (c as { type: "text"; text: string }).text)
     .join("");
 
-  if (!content) return [];
-
-  const raw = parseJsonArray(content);
-
-  return raw
-    .filter(isValidCandidate)
-    .map((c) => ({
-      text: (c as ExtractionCandidate).text.trim(),
-      category: (c as ExtractionCandidate).category as MemoryCategory,
-      durability: (c as ExtractionCandidate).durability as MemoryDurability,
-      confidence: (c as ExtractionCandidate).confidence,
-      reason: typeof (c as RawCandidate).reason === "string"
-        ? ((c as RawCandidate).reason as string)
-        : "llm_extracted",
-      stability: normalizeStability((c as RawCandidate).stability),
-      sensitivity: normalizeSensitivity((c as RawCandidate).sensitivity),
-      suggestedAction: typeof (c as RawCandidate).suggestedAction === "string" && VALID_ACTIONS.has((c as RawCandidate).suggestedAction as string)
-        ? ((c as RawCandidate).suggestedAction as "save" | "pending" | "discard")
-        : "pending",
-    }));
+  return parseExtractedCandidates(content);
 }
