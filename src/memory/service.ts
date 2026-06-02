@@ -293,6 +293,34 @@ export class MemoryService {
     return true;
   }
 
+  async promotePendingCandidate(key: string): Promise<boolean> {
+    const signal = this.localSignals.get(key);
+    if (!signal || signal.promotedAt || signal.lastDecisionAction !== "pending") return false;
+
+    const candidate = signalToCandidate(signal);
+    const score = typeof signal.lastPromotionScore === "number"
+      ? signal.lastPromotionScore
+      : evaluateCandidateDecision(candidate, signal, this.extractorMode).score;
+    const promotionReasons = ["manual_review_approved"];
+    const result = await this.promoteSignal(
+      signal,
+      score,
+      promotionReasons,
+      buildPromotionMetadata(candidate, signal, score, promotionReasons, this.extractorMode, {
+        reviewed_action: "saved_from_review",
+      }),
+    );
+
+    if (result === "saved" || result === "merged") {
+      signal.promotedAt = Date.now();
+      signal.lastPromotionScore = score;
+      signal.lastDecisionAction = "save";
+      return true;
+    }
+
+    return false;
+  }
+
   async addCandidateIfNovel(text: string, normalized: string, metadata: JsonObject): Promise<"saved" | "merged" | "skipped"> {
     const existing = await this.list();
     const normalizedValue = normalizeText(normalized);
