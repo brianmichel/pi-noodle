@@ -1,11 +1,16 @@
 {
-  "name": "pi-noodle",
+  "name": "@brianmichel/pi-noodle",
   "version": "0.1.0",
   "description": "Long-term memory for Pi — local libSQL database with vector search.",
   "type": "module",
   "keywords": [
+    "pi",
+    "pi.dev",
     "pi-package",
     "pi-extension",
+    "pi-plugin",
+    "ai-agent",
+    "agent-memory",
     "memory",
     "libsql",
     "turso",

@@ -17,7 +17,7 @@ Under the hood it uses [libSQL](https://turso.tech/libsql) for storage and vecto
 
 ```bash
 # Install as a Pi extension
-pi install pi-noodle
+pi install @brianmichel/pi-noodle
 
 # In Pi, configure interactively
 /noodle settings
