@@ -18,6 +18,10 @@ raw = true
 env = { FORCE_COLOR = "1" }
 run = "npm test"
 
+[tasks.build]
+description = "Build the package"
+run = "npm run build"
+
 [tasks.precommit]
 description = "Run precommit checks"
 raw = true
