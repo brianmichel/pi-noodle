@@ -11,6 +11,18 @@
     "turso",
     "vector-search"
   ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/brianmichel/pi-noodle.git"
+  },
+  "homepage": "https://github.com/brianmichel/pi-noodle#readme",
+  "bugs": {
+    "url": "https://github.com/brianmichel/pi-noodle/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=22"
   },
