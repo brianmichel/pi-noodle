@@ -6,7 +6,6 @@ import type { MemoryBackend } from "../src/memory/backend.ts";
 import { MemoryService, planMemoryCaptureEvent } from "../src/memory/service.ts";
 import type {
   AddMemoryInput,
-  ConversationCaptureInput,
   ExtractionCandidate,
   MemoryCaptureEvent,
   MemoryListInput,
@@ -19,7 +18,6 @@ class FakeMemoryBackend implements MemoryBackend {
   public readonly added: AddMemoryInput[] = [];
   public readonly updated: Array<{ id: string; input: UpdateMemoryInput }> = [];
   public readonly deleted: string[] = [];
-  public readonly conversationCaptures: ConversationCaptureInput[] = [];
   public readonly consolidations: number[] = [];
   public records: MemoryRecord[] = [];
 
@@ -54,10 +52,6 @@ class FakeMemoryBackend implements MemoryBackend {
 
   async delete(id: string): Promise<void> {
     this.deleted.push(id);
-  }
-
-  async captureConversation(input: ConversationCaptureInput): Promise<void> {
-    this.conversationCaptures.push(input);
   }
 
   async consolidate() {
@@ -115,7 +109,6 @@ test("capture planner runs heuristics every user turn and extraction on automati
   assert.deepEqual(plan, {
     runHeuristics: true,
     runLlmExtraction: true,
-    captureConversation: false,
     consolidate: false,
     extractionReason: "automatic_capture",
   });
@@ -141,7 +134,7 @@ test("capture planner runs scheduled extraction on cadence turns without heurist
   assert.equal(plan.extractionReason, "scheduled");
 });
 
-test("capture planner maps shutdown events to extraction, conversation capture, and consolidation", () => {
+test("capture planner maps shutdown events to extraction and consolidation without raw conversation capture", () => {
   const event: MemoryCaptureEvent = {
     type: "session_shutdown",
     reason: "exit",
@@ -159,10 +152,8 @@ test("capture planner maps shutdown events to extraction, conversation capture, 
   assert.deepEqual(plan, {
     runHeuristics: false,
     runLlmExtraction: true,
-    captureConversation: true,
     consolidate: true,
     extractionReason: "shutdown:exit",
-    conversationReason: "shutdown:exit",
   });
 });
 
@@ -184,7 +175,6 @@ test("capture planner skips shutdown capture work on reload", () => {
   assert.deepEqual(plan, {
     runHeuristics: false,
     runLlmExtraction: false,
-    captureConversation: false,
     consolidate: false,
   });
 });
@@ -395,7 +385,7 @@ test("MemoryService forwards generic get, update, and delete operations", async 
   assert.deepEqual(backend.deleted, ["1"]);
 });
 
-test("MemoryService capture archives conversation and triggers extraction on shutdown-style events", async () => {
+test("MemoryService capture avoids raw conversation persistence and still triggers extraction on shutdown-style events", async () => {
   const backend = new FakeMemoryBackend();
   const extractor = createExtractor([
     {
@@ -431,10 +421,8 @@ test("MemoryService capture archives conversation and triggers extraction on shu
   });
   await flushPendingWrites();
 
-  assert.equal(result.conversationCaptureQueued, true);
   assert.equal(result.llmExtractionQueued, true);
   assert.equal(result.consolidationQueued, true);
-  assert.equal(backend.conversationCaptures.length, 1);
   assert.equal(backend.consolidations.length, 1);
   assert.ok(backend.added.length > 0 || service.listPendingCandidates().length > 0);
 });

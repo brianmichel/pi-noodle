@@ -312,24 +312,6 @@ describe("TursoBackend", () => {
     assert.ok(found);
   });
 
-  it("captures a conversation", async () => {
-    await backend.captureConversation?.({
-      messages: [
-        { role: "user", content: "What is your name?" },
-        { role: "assistant", content: "I am Pi." },
-      ],
-      metadata: { source: "convo-test" },
-      scope: { assistantId: "agent-1" },
-    });
-
-    const list = await backend.list({ scope: { assistantId: "agent-1" } });
-    const captured = list.find((m: MemoryRecord) =>
-      m.text.includes("What is your name"),
-    );
-    assert.ok(captured);
-    assert.equal(captured.metadata["source"], "convo-test");
-  });
-
   it("rejects add with no text or messages", async () => {
     await assert.rejects(
       () =>

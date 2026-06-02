@@ -73,12 +73,10 @@ function createDeps(overrides?: (Partial<MemoryExtensionDeps> & {
           plan: {
             runHeuristics: event.type === "user_input",
             runLlmExtraction: !!event.extractor,
-            captureConversation: event.type !== "user_input",
             consolidate: event.type === "session_shutdown" && event.reason !== "reload",
           },
           automaticCaptureQueued: event.type === "user_input",
           llmExtractionQueued: !!resolution,
-          conversationCaptureQueued: event.type !== "user_input",
           consolidationQueued: event.type === "session_shutdown" && event.reason !== "reload",
         } satisfies MemoryCaptureResult;
       },

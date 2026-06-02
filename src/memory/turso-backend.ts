@@ -6,7 +6,6 @@ import type { Embedder } from "./embedder.ts";
 import type {
   AddMemoryInput,
   ConsolidationReport,
-  ConversationCaptureInput,
   MemoryCategory,
   MemoryListInput,
   MemoryRecord,
@@ -52,9 +51,7 @@ function buildScopeFilter(scope?: MemoryScope): {
   return parts.length > 0 ? { clause: parts.join(" AND "), args } : { args };
 }
 
-function extractText(
-  input: AddMemoryInput | ConversationCaptureInput,
-): string {
+function extractText(input: AddMemoryInput): string {
   if (input.messages && input.messages.length > 0) {
     return input.messages.map((m) => m.content).join("\n");
   }
@@ -458,30 +455,6 @@ export class TursoBackend implements MemoryBackend {
     await this.db.execute({
       sql: "DELETE FROM memories WHERE id = ?",
       args: [id],
-    });
-  }
-
-  async captureConversation(input: ConversationCaptureInput): Promise<void> {
-    const text = extractText(input);
-    const embedding = await this.embedChecked(text);
-    await this.ensureSchema(embedding.length);
-    const scope = normalizeScope(input.scope);
-
-    await this.db.execute({
-      sql: `INSERT INTO memories
-              (id, text, embedding, category, categories,
-               user_id, assistant_id, session_id, metadata, created_at)
-            VALUES (?, ?, vector32(?), NULL, '[]', ?, ?, ?, ?, ?)`,
-      args: [
-        crypto.randomUUID(),
-        text,
-        toVectorJson(embedding),
-        scope.userId ?? null,
-        scope.assistantId ?? null,
-        scope.sessionId ?? null,
-        JSON.stringify(input.metadata ?? {}),
-        Date.now(),
-      ],
     });
   }
 

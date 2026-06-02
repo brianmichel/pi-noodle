@@ -8,11 +8,9 @@ import {
 } from "../debug-overlay.ts";
 import { enqueueWriteTask } from "../queue.ts";
 import {
-  buildSessionSignature,
   collectSessionMessages,
   ensureMessages,
   selectExtractorMessages,
-  selectMemoryWorthMessages,
 } from "../session.ts";
 import type { JsonObject } from "../types.ts";
 import type { NoodleExtractorMode, NotificationTarget } from "../types.ts";
@@ -67,13 +65,6 @@ type ExtractorRunOptions = {
   resolve: () => Promise<MemoryExtractorResolution | null>;
 };
 
-type ConversationCaptureOptions = {
-  sessionManager: MemoryCaptureEvent["sessionManager"];
-  reason: string;
-  target?: NotificationTarget;
-  successMessage?: string;
-};
-
 export function planMemoryCaptureEvent(
   event: MemoryCaptureEvent,
   options: {
@@ -95,7 +86,6 @@ export function planMemoryCaptureEvent(
       return {
         runHeuristics: true,
         runLlmExtraction,
-        captureConversation: false,
         consolidate: false,
         extractionReason: options.hasHeuristicCandidates ? "automatic_capture" : "scheduled",
       };
@@ -104,36 +94,29 @@ export function planMemoryCaptureEvent(
       return {
         runHeuristics: false,
         runLlmExtraction: canExtract,
-        captureConversation: true,
         consolidate: false,
         extractionReason: "before_compact",
-        conversationReason: "before_compact",
       };
     case "session_before_switch":
       return {
         runHeuristics: false,
         runLlmExtraction: canExtract,
-        captureConversation: true,
         consolidate: false,
         extractionReason: `before_switch:${event.reason}`,
-        conversationReason: `before_switch:${event.reason}`,
       };
     case "session_shutdown":
       if (event.reason === "reload") {
         return {
           runHeuristics: false,
           runLlmExtraction: false,
-          captureConversation: false,
           consolidate: false,
         };
       }
       return {
         runHeuristics: false,
         runLlmExtraction: canExtract,
-        captureConversation: true,
         consolidate: true,
         extractionReason: `shutdown:${event.reason}`,
-        conversationReason: `shutdown:${event.reason}`,
       };
   }
 }
@@ -141,7 +124,6 @@ export function planMemoryCaptureEvent(
 export class MemoryService {
   private readonly localSignals = new Map<string, LocalSignal>();
   private readonly recentlySaved = new Set<string>();
-  private readonly savedSessionSignatures = new Set<string>();
   private readonly backend: MemoryBackend;
   private readonly extractorMode: NoodleExtractorMode;
   private readonly extractorTriggerEvery: number;
@@ -235,15 +217,6 @@ export class MemoryService {
       }
     }
 
-    let conversationCaptureQueued = false;
-    if (plan.captureConversation && plan.conversationReason) {
-      conversationCaptureQueued = this.queueConversationCapture({
-        sessionManager: event.sessionManager,
-        reason: plan.conversationReason,
-        ...(event.target ? { target: event.target } : {}),
-      });
-    }
-
     let llmExtractionQueued = false;
     if (plan.runLlmExtraction && event.extractor && plan.extractionReason) {
       llmExtractionQueued = await this.queueExtractorRun({
@@ -263,7 +236,6 @@ export class MemoryService {
       plan,
       automaticCaptureQueued,
       llmExtractionQueued,
-      conversationCaptureQueued,
       consolidationQueued,
     };
   }
@@ -352,49 +324,6 @@ export class MemoryService {
       ...(categories ? { categories } : {}),
     });
     return "saved";
-  }
-
-  private queueConversationCapture(options: ConversationCaptureOptions): boolean {
-    const signature = buildSessionSignature(options.sessionManager);
-    if (this.savedSessionSignatures.has(signature)) return false;
-
-    const messages = selectMemoryWorthMessages(collectSessionMessages(options.sessionManager));
-    if (messages.length < 2) return false;
-
-    this.savedSessionSignatures.add(signature);
-    enqueueWriteTask({
-      label: "Memory session capture",
-      ...(options.target ? { target: options.target } : {}),
-      ...(options.successMessage ? { successMessage: options.successMessage } : {}),
-      onFailure: () => {
-        this.savedSessionSignatures.delete(signature);
-      },
-      task: async () => {
-        if (this.backend.captureConversation) {
-          await this.backend.captureConversation({
-            messages,
-            metadata: {
-              source: "pi-session-wrapup",
-              reason: options.reason,
-              session_file: options.sessionManager.getSessionFile?.() || null,
-            },
-            scope: this.withDefaultScope(),
-          });
-          return;
-        }
-
-        await this.add({
-          messages,
-          metadata: {
-            source: "pi-session-wrapup",
-            reason: options.reason,
-            session_file: options.sessionManager.getSessionFile?.() || null,
-          },
-        });
-      },
-    });
-
-    return true;
   }
 
   private async queueExtractorRun(options: ExtractorRunOptions): Promise<boolean> {

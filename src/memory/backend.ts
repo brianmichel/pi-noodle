@@ -1,7 +1,6 @@
 import type {
   AddMemoryInput,
   ConsolidationReport,
-  ConversationCaptureInput,
   MemoryListInput,
   MemoryRecord,
   MemorySearchInput,
@@ -17,6 +16,5 @@ export interface MemoryBackend {
   delete(id: string): Promise<void>;
   /** Bump retrieval stats when memories are injected into a prompt. */
   recordRetrievals?(ids: string[]): Promise<void>;
-  captureConversation?(input: ConversationCaptureInput): Promise<void>;
   consolidate?(): Promise<ConsolidationReport>;
 }

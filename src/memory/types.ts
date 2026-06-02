@@ -65,12 +65,6 @@ export type UpdateMemoryInput = {
   metadata?: JsonObject;
 };
 
-export type ConversationCaptureInput = {
-  messages: MemoryMessage[];
-  metadata?: JsonObject;
-  scope?: MemoryScope;
-};
-
 export type MemoryCandidate = {
   text: string;
   normalized: string;
@@ -177,16 +171,13 @@ export type MemoryCaptureEvent =
 export type MemoryCapturePlan = {
   runHeuristics: boolean;
   runLlmExtraction: boolean;
-  captureConversation: boolean;
   consolidate: boolean;
   extractionReason?: string;
-  conversationReason?: string;
 };
 
 export type MemoryCaptureResult = {
   plan: MemoryCapturePlan;
   automaticCaptureQueued: boolean;
   llmExtractionQueued: boolean;
-  conversationCaptureQueued: boolean;
   consolidationQueued: boolean;
 };
