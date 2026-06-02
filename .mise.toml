@@ -1,5 +1,6 @@
 [tools]
 node = "22"
+actionlint = "latest"
 
 [tasks.check]
 description = "Run the TypeScript check"
