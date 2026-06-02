@@ -1,6 +1,15 @@
 # pi-noodle
 
-Long-term memory for Pi, powered by a local [libSQL](https://turso.tech/libsql) database with vector similarity search.
+Long-term memory for Pi.
+
+This repo is building a small, opinionated memory system that tries to be:
+
+- **useful** — retrieve facts that actually help future turns
+- **safe** — avoid saving temporary or sensitive content
+- **automatic** — capture durable signals from normal conversation
+- **inspectable** — review what was saved, pending, or discarded
+
+Under the hood it uses [libSQL](https://turso.tech/libsql) for storage and vector similarity search for retrieval.
 
 ![](img/dashboard.jpeg)
 
@@ -96,7 +105,7 @@ Run `/noodle web` in Pi to open the explorer in your browser. The server runs in
 
 ### Memory modes
 
-When memory mode is not `off`, capture uses **LLM-first discovery, policy-gated persistence**:
+When memory mode is not `off`, capture uses a **unified capture pipeline** with policy-gated persistence:
 
 - `conservative`
   - fewer extraction runs
@@ -132,35 +141,50 @@ Env vars take priority over the config file:
 
 ## Architecture
 
-```
-MemoryService (dedupe, policy, review queue, auto-capture)
-       │
-  MemoryBackend (interface)
-       │
-  TursoBackend
-       │
-  ├── libSQL (local file or Turso Cloud)
-  └── Embedder (OpenAI / LM Studio / Ollama / any /v1/embeddings)
+```text
+Pi lifecycle events
+  └─► MemoryService.capture(event)
+        ├─► heuristic capture
+        ├─► optional LLM extraction
+        ├─► candidate promotion policy
+        └─► conversation capture / consolidation when needed
+                    │
+                    ▼
+              MemoryBackend
+                    │
+               TursoBackend
+               ├─► libSQL (local or cloud)
+               └─► Embedder
 ```
 
-### LLM-first memory pipeline
+### Capture pipeline
 
 ```text
-user turn
+input / compact / switch / shutdown
   │
-  ├─► lightweight heuristic prefilter
-  │      ├─ blocks sensitive / temporary content
-  │      └─ catches explicit high-signal memory asks
-  │
-  ├─► optional LLM extraction on configured cadence + model
-  │
-  ├─► local policy decision
-  │      ├─ save     → durable memory DB
-  │      ├─ pending  → /noodle review only
-  │      └─ discard  → dropped
-  │
-  └─► retrieval injects only saved memories
+  └─► MemoryService.capture(event)
+        │
+        ├─► heuristic prefilter
+        │      ├─ blocks sensitive / temporary content
+        │      └─ catches explicit memory asks
+        │
+        ├─► optional LLM extraction
+        │      └─ turns conversation context into memory candidates
+        │
+        ├─► local promotion policy
+        │      ├─ save     → durable memory DB
+        │      ├─ pending  → /noodle review only
+        │      └─ discard  → dropped
+        │
+        └─► retrieval injects only saved memories
 ```
+
+### Why it is shaped this way
+
+- Pi only tells the memory system **what event happened**
+- `MemoryService` decides **which capture stages should run**
+- heuristic and LLM candidates share the **same promotion path**
+- pending memories stay out of retrieval until reviewed or reinforced
 
 ### What gets stored
 
@@ -174,10 +198,11 @@ Vector similarity via `vector_distance_cos()` in libSQL, ranked by cosine distan
 
 The system intentionally separates:
 
-- **detection** — heuristics + LLM extraction find memory candidates
-- **persistence** — local policy decides whether to save, keep pending, or discard
+- **detection** — heuristics and LLM extraction find memory candidates
+- **promotion** — local policy decides save / pending / discard
+- **retrieval** — only saved memories are injected into prompts
 
-That is what makes the system feel more proactive without letting low-confidence guesses pollute retrieval. Pending candidates stay visible in `/noodle review` but are **not** injected into prompts until promoted.
+That keeps the system proactive without letting low-confidence guesses pollute retrieval. Pending candidates stay visible in `/noodle review` but are **not** injected until promoted.
 
 ## File layout
 
@@ -200,7 +225,7 @@ src/
     ├── turso-backend.ts   # TursoBackend (libSQL + vector search)
     ├── embedder.ts        # Embedder type
     ├── embedders/         # openai.ts, lm-studio.ts
-    ├── service.ts         # MemoryService (dedupe, scoring, auto-capture)
+    ├── service.ts         # MemoryService (event-driven capture pipeline + promotion)
     ├── policy.ts          # Heuristics (classification, repetition, retrieval)
     └── runtime.ts         # Wiring (config + TursoBackend + MemoryService)
 ```
