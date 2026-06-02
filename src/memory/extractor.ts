@@ -10,6 +10,7 @@ import type {
   MemoryDurability,
   MemoryMessage,
 } from "./types.ts";
+import { redactSensitiveText } from "./policy.ts";
 
 const SYSTEM_PROMPT = `You extract durable, memorable facts from AI assistant conversations.
 
@@ -153,7 +154,7 @@ export async function extractMemoriesFromMessages(
   if (messages.length === 0) return [];
 
   const conversationText = messages
-    .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
+    .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${redactSensitiveText(m.content)}`)
     .join("\n\n");
 
   const userMessage: Message = {

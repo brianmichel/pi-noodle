@@ -1258,9 +1258,15 @@
           ws.close(1000, "tab closed");
         }
       }
+      const authToken = new URLSearchParams(location.search).get("token") || "";
+      function authPath(path) {
+        const url = new URL(path, location.origin);
+        if (authToken) url.searchParams.set("token", authToken);
+        return url.pathname + url.search;
+      }
       function connect() {
         if (shuttingDown) return;
-        ws = new WebSocket("ws://" + location.host);
+        ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/?token=${encodeURIComponent(authToken)}`);
         ws.onopen = () => {
           setLive(true);
           if (pingTimer) clearInterval(pingTimer);
@@ -1370,7 +1376,7 @@
       async function load() {
         showSkeleton();
         try {
-          const r = await fetch("/api/memories");
+          const r = await fetch(authPath("/api/memories"));
           if (!r.ok) throw new Error("HTTP " + r.status);
           const data = await r.json();
           if (!Array.isArray(data)) throw new Error("Invalid response");
@@ -1875,7 +1881,7 @@
       }
 
       async function updateMemory(id, text) {
-        const res = await fetch(`/api/memories/${encodeURIComponent(id)}`, {
+        const res = await fetch(authPath(`/api/memories/${encodeURIComponent(id)}`), {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ text }),
@@ -1884,7 +1890,7 @@
       }
 
       async function deleteMemory(id) {
-        const res = await fetch(`/api/memories/${encodeURIComponent(id)}`, { method: "DELETE" });
+        const res = await fetch(authPath(`/api/memories/${encodeURIComponent(id)}`), { method: "DELETE" });
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
       }
 

@@ -40,9 +40,10 @@ const TEMPORARY_PATTERNS: RegExp[] = [
 
 const SENSITIVE_PATTERNS: RegExp[] = [
   /\b(api[_ -]?key|token|secret|password|passwd|private key|ssh key|oauth)\b/i,
-  /\bm0sk_[a-z0-9]+\b/i,
-  /\bsk-[a-z0-9]+\b/i,
-  /authorization:\s*bearer/i,
+  /\bm0sk_[a-z0-9]+\b/gi,
+  /\bsk-[a-z0-9]+\b/gi,
+  /authorization:\s*bearer\s+[^\s]+/gi,
+  /\b(?:ghp|github_pat)_[a-z0-9_]+\b/gi,
 ];
 
 const STYLE_HINTS = /\b(concise|brief|short|verbose|detailed|bullet points?|markdown|plain text)\b/i;
@@ -94,6 +95,21 @@ export function buildSignalKey(candidate: MemoryCandidate): string {
 
 export function shouldBlockSensitiveMemory(text: string): boolean {
   return SENSITIVE_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+export function redactSensitiveText(text: string): string {
+  let redacted = text;
+
+  redacted = redacted.replace(/authorization:\s*bearer\s+[^\s]+/gi, "Authorization: Bearer [REDACTED]");
+  redacted = redacted.replace(/\bsk-[a-z0-9]+\b/gi, "[REDACTED_SECRET]");
+  redacted = redacted.replace(/\bm0sk_[a-z0-9]+\b/gi, "[REDACTED_SECRET]");
+  redacted = redacted.replace(/\b(?:ghp|github_pat)_[a-z0-9_]+\b/gi, "[REDACTED_SECRET]");
+  redacted = redacted.replace(
+    /\b(api[_ -]?key|token|secret|password|passwd|private key|ssh key|oauth)\b\s*[:=]?\s*([^\s,;]+)/gi,
+    "$1 [REDACTED]",
+  );
+
+  return redacted;
 }
 
 export function shouldRetrieveMemories(prompt: string): boolean {

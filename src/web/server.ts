@@ -16,6 +16,7 @@ const SHUTDOWN_DELAY_MS = 1_500;
 export type MemoryExplorerOptions = {
   dev?: boolean;
   openBrowser?: boolean;
+  token: string;
 };
 
 export function startMemoryExplorer(
@@ -25,10 +26,11 @@ export function startMemoryExplorer(
     delete: (id: string) => Promise<void>;
   },
   port = 3000,
-  options: MemoryExplorerOptions = {},
+  options: MemoryExplorerOptions,
 ): ReturnType<typeof Bun.serve> {
   const dev = options.dev ?? false;
   const openBrowser = options.openBrowser ?? !dev;
+  const token = options.token;
   let shutdownTimer: ReturnType<typeof setTimeout> | null = null;
   let html = readFileSync(HTML_PATH, "utf8");
   const sockets = new Set<ServerWebSocket<unknown>>();
@@ -92,10 +94,18 @@ export function startMemoryExplorer(
     });
   }
 
+  function isAuthorized(url: URL): boolean {
+    return url.searchParams.get("token") === token;
+  }
+
   const server = Bun.serve({
     port,
+    hostname: "127.0.0.1",
     fetch: async (req, server) => {
       const url = new URL(req.url);
+      if (!isAuthorized(url)) {
+        return Response.json({ error: "Forbidden" }, { status: 403 });
+      }
       if (server.upgrade(req)) return;
 
       if (url.pathname === "/") {
@@ -179,7 +189,7 @@ export function startMemoryExplorer(
     }, PING_INTERVAL_MS);
   }
 
-  const url = `http://localhost:${port}`;
+  const url = `http://127.0.0.1:${port}`;
   console.log(`Memory Explorer: ${url}${dev ? " (dev — hot reload on)" : ""}`);
 
   if (openBrowser) {
@@ -190,7 +200,7 @@ export function startMemoryExplorer(
           : platform === "win32"
             ? "start"
             : "xdg-open";
-      spawn(cmd, [url], { stdio: "ignore", detached: true });
+      spawn(cmd, [`${url}/?token=${encodeURIComponent(token)}`], { stdio: "ignore", detached: true });
     }, 100);
   }
 

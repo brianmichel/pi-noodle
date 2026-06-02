@@ -1,10 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { DEFAULT_EXTRACTOR_MODE, defaultExtractorTriggerEvery, resolveConfig } from "../src/config.ts";
+import { DEFAULT_EXTRACTOR_MODE, defaultExtractorTriggerEvery, resolveConfig, writeConfig } from "../src/config.ts";
 
 test("defaultExtractorTriggerEvery follows extractor mode defaults", () => {
   assert.equal(DEFAULT_EXTRACTOR_MODE, "balanced");
@@ -59,6 +59,30 @@ test("resolveConfig allows extractor mode env override and backfills cadence fro
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("writeConfig writes a user-only config file", () => {
+  const dir = mkdtempSync(join(tmpdir(), "noodle-config-"));
+  const path = join(dir, "config.json");
+  const previous = {
+    NOODLE_CONFIG_PATH: process.env["NOODLE_CONFIG_PATH"],
+  };
+
+  try {
+    process.env["NOODLE_CONFIG_PATH"] = path;
+    writeConfig({ embedding: { apiKey: "secret-value" } });
+
+    const mode = statSync(path).mode & 0o777;
+    assert.equal(mode, 0o600);
+    assert.match(readFileSync(path, "utf-8"), /secret-value/);
+  } finally {
+    if (previous.NOODLE_CONFIG_PATH === undefined) {
+      delete process.env["NOODLE_CONFIG_PATH"];
+    } else {
+      process.env["NOODLE_CONFIG_PATH"] = previous.NOODLE_CONFIG_PATH;
     }
     rmSync(dir, { recursive: true, force: true });
   }

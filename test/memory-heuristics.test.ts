@@ -5,6 +5,7 @@ import {
   buildSignalKey,
   evaluateCandidateDecision,
   prefilterUserMessage,
+  redactSensitiveText,
   shouldBlockSensitiveMemory,
   shouldRetrieveMemories,
 } from "../src/memory/policy.ts";
@@ -38,6 +39,14 @@ test("blocks sensitive content from becoming memory", () => {
   const result = prefilterUserMessage("Remember this token sk-secret-value forever");
   assert.equal(result.hasCandidate, false);
   assert.deepEqual(result.candidateReasons, ["sensitive_content_blocked"]);
+});
+
+test("redacts sensitive content before extractor submission", () => {
+  const redacted = redactSensitiveText("Authorization: Bearer abc123 and API key sk-secret-value");
+
+  assert.match(redacted, /Authorization: Bearer \[REDACTED\]/);
+  assert.doesNotMatch(redacted, /abc123/);
+  assert.doesNotMatch(redacted, /sk-secret-value/);
 });
 
 test("buildSignalKey is stable for dedupe", () => {

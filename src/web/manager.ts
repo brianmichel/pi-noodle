@@ -11,6 +11,7 @@ const STATE_PATH = join(homedir(), ".pi", "noodle", "explorer.json");
 export type ExplorerState = {
   pid: number;
   port: number;
+  token: string;
   dev?: boolean;
 };
 
@@ -47,8 +48,12 @@ export function isExplorerRunning(): boolean {
   }
 }
 
-export function openExplorerBrowser(port: number): void {
-  const url = `http://localhost:${port}`;
+export function buildExplorerUrl(port: number, token: string): string {
+  return `http://127.0.0.1:${port}/?token=${encodeURIComponent(token)}`;
+}
+
+export function openExplorerBrowser(port: number, token: string): void {
+  const url = buildExplorerUrl(port, token);
   const cmd =
     platform === "darwin"
       ? "open"
@@ -63,7 +68,8 @@ export function spawnExplorer(port: number, dev = false): ExplorerState | null {
     return readExplorerState();
   }
 
-  const args = [RUN_SCRIPT, String(port)];
+  const token = crypto.randomUUID();
+  const args = [RUN_SCRIPT, String(port), `--token=${token}`];
   if (dev) args.push("--dev");
 
   const child = spawn("bun", args, {
@@ -74,7 +80,7 @@ export function spawnExplorer(port: number, dev = false): ExplorerState | null {
 
   if (!child.pid) return null;
   child.unref();
-  return { pid: child.pid, port, dev };
+  return { pid: child.pid, port, token, dev };
 }
 
 export function stopExplorer(): boolean {

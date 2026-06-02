@@ -20,8 +20,8 @@ export async function runWeb(ui: CtxUi, subcommand: string): Promise<void> {
   if (isExplorerRunning()) {
     const running = readExplorerState();
     const activePort = running?.port ?? port;
-    openExplorerBrowser(activePort);
-    ui.notify(`Memory Explorer already running at http://localhost:${activePort}`, "info");
+    if (running?.token) openExplorerBrowser(activePort, running.token);
+    ui.notify(`Memory Explorer already running at http://127.0.0.1:${activePort}`, "info");
     return;
   }
 
@@ -33,8 +33,8 @@ export async function runWeb(ui: CtxUi, subcommand: string): Promise<void> {
 
   ui.notify(
     dev
-      ? `Memory Explorer (dev) starting at http://localhost:${port} — use /noodle web stop when done`
-      : `Memory Explorer started at http://localhost:${port} — closes automatically when all tabs are closed`,
+      ? `Memory Explorer (dev) starting at http://127.0.0.1:${port} — use /noodle web stop when done`
+      : `Memory Explorer started at http://127.0.0.1:${port} — closes automatically when all tabs are closed`,
     "info",
   );
 }

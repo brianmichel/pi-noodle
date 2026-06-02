@@ -11,16 +11,18 @@ import { startMemoryExplorer } from "./server.ts";
 
 const port = parseInt(process.argv[2] ?? "3000", 10);
 const dev = process.argv.includes("--dev");
+const tokenArg = process.argv.find((arg) => arg.startsWith("--token="));
+const token = tokenArg?.slice("--token=".length) || crypto.randomUUID();
 
-mkdirSync(dirname(explorerStatePath()), { recursive: true });
-const state: ExplorerState = { pid: process.pid, port, dev };
-writeFileSync(explorerStatePath(), JSON.stringify(state));
+mkdirSync(dirname(explorerStatePath()), { recursive: true, mode: 0o700 });
+const state: ExplorerState = { pid: process.pid, port, token, dev };
+writeFileSync(explorerStatePath(), JSON.stringify(state), { mode: 0o600 });
 
 function cleanup(): void {
   clearExplorerState();
 }
 
-const server = startMemoryExplorer(memoryService, port, { dev, openBrowser: true });
+const server = startMemoryExplorer(memoryService, port, { dev, openBrowser: true, token });
 
 function shutdown(): void {
   cleanup();

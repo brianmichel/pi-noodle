@@ -132,8 +132,8 @@ export function writeConfig(partial: NoodleConfigPartial): void {
   mergeInto(config, partial);
 
   const filePath = resolveConfigPath();
-  mkdirSync(NOODLE_DIR, { recursive: true });
-  writeFileSync(filePath, JSON.stringify(config, null, 2) + "\n", "utf-8");
+  mkdirSync(NOODLE_DIR, { recursive: true, mode: 0o700 });
+  writeFileSync(filePath, JSON.stringify(config, null, 2) + "\n", { encoding: "utf-8", mode: 0o600 });
 }
 
 // ---------------------------------------------------------------------------

@@ -3,5 +3,5 @@ import { startMemoryExplorer } from "./server.ts";
 
 const port = parseInt(process.env["PORT"] ?? "3000", 10);
 
-startMemoryExplorer(memoryService, port, { dev: true, openBrowser: true });
+startMemoryExplorer(memoryService, port, { dev: true, openBrowser: true, token: crypto.randomUUID() });
 console.log("Editing src/web/index.html will hot-reload the browser. Ctrl+C to stop.");
