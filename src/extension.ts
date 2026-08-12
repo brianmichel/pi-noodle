@@ -1,11 +1,12 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import { registerCommands as registerCommandsRuntime } from "./commands.ts";
 import {
   configureExtractorDebug,
   maybeStartExtractorDebugOverlay,
   noteUserTurnForExtractorDebug,
+  stopExtractorDebugOverlay,
 } from "./debug-overlay.ts";
 import {
   extractorDebug as runtimeExtractorDebug,
@@ -17,7 +18,34 @@ import {
 import type { MemoryCaptureEvent, MemoryCaptureResult, MemoryExtractorResolution, MemoryRecord } from "./memory/types.ts";
 import { flushPendingWrites as flushPendingWritesRuntime } from "./session.ts";
 import { memoryTools as runtimeMemoryTools } from "./tools.ts";
-import type { NoodleExtractorMode } from "./types.ts";
+import type { NoodleExtractorMode, NotificationTarget, SessionManagerLike } from "./types.ts";
+
+function createNotificationTarget(ctx: ExtensionContext): NotificationTarget | undefined {
+  if (!ctx.hasUI) return undefined;
+  const ui = ctx.ui;
+  return { ui: { notify: ui.notify.bind(ui) } };
+}
+
+function startBackgroundCapture(capture: () => Promise<unknown>): void {
+  void capture().catch(() => {
+    console.error("Memory lifecycle capture failed");
+  });
+}
+
+function isSessionReplacement(reason: string): boolean {
+  return reason === "new" || reason === "resume";
+}
+
+function snapshotSessionManager(sessionManager: SessionManagerLike): SessionManagerLike {
+  const branch = sessionManager.getBranch().slice();
+  const sessionFile = sessionManager.getSessionFile?.();
+  const leafId = sessionManager.getLeafId?.();
+  return {
+    getBranch: () => branch,
+    ...(sessionFile !== undefined ? { getSessionFile: () => sessionFile } : {}),
+    ...(leafId !== undefined ? { getLeafId: () => leafId } : {}),
+  };
+}
 
 type RegisteredTool = Parameters<ExtensionAPI["registerTool"]>[0];
 
@@ -42,10 +70,6 @@ type ExtractorModelRegistry = {
   getApiKeyAndHeaders(model: Model<Api>): Promise<{ ok: boolean; apiKey?: string; headers?: Record<string, string>; error?: string }>;
 };
 
-type ExtractorContext = {
-  modelRegistry: ExtractorModelRegistry;
-};
-
 const runtimeDeps: MemoryExtensionDeps = {
   memoryService: runtimeMemoryService,
   extractorMode: runtimeExtractorMode,
@@ -61,10 +85,10 @@ export function createMemoryExtension(deps: MemoryExtensionDeps = runtimeDeps) {
   return function memoryExtension(pi: ExtensionAPI) {
     configureExtractorDebug(deps.extractorDebug ?? false, deps.extractorMode, deps.extractorTriggerEvery);
 
-    const buildExtractor = (ctx: ExtractorContext): MemoryCaptureEvent["extractor"] | undefined => {
+    const buildExtractor = (modelRegistry: ExtractorModelRegistry): MemoryCaptureEvent["extractor"] | undefined => {
       if (deps.extractorMode === "off") return undefined;
       return {
-        resolve: () => resolveExtractorModel(deps.extractorModelId, ctx.modelRegistry),
+        resolve: () => resolveExtractorModel(deps.extractorModelId, modelRegistry),
       };
     };
 
@@ -76,12 +100,13 @@ export function createMemoryExtension(deps: MemoryExtensionDeps = runtimeDeps) {
       if (event.source === "extension") return { action: "continue" };
 
       noteUserTurnForExtractorDebug();
-      const extractor = buildExtractor(ctx);
+      const extractor = buildExtractor(ctx.modelRegistry);
+      const target = createNotificationTarget(ctx);
       await deps.memoryService.capture({
         type: "user_input",
         text: event.text,
         sessionManager: ctx.sessionManager,
-        target: ctx,
+        ...(target ? { target } : {}),
         ...(extractor ? { extractor } : {}),
       });
 
@@ -102,35 +127,46 @@ export function createMemoryExtension(deps: MemoryExtensionDeps = runtimeDeps) {
     });
 
     pi.on("session_before_compact", async (_event, ctx) => {
-      const extractor = buildExtractor(ctx);
+      const extractor = buildExtractor(ctx.modelRegistry);
+      const target = createNotificationTarget(ctx);
       await deps.memoryService.capture({
         type: "session_before_compact",
         sessionManager: ctx.sessionManager,
-        target: ctx,
+        ...(target ? { target } : {}),
         ...(extractor ? { extractor } : {}),
       });
     });
 
     pi.on("session_before_switch", async (event, ctx) => {
-      const extractor = buildExtractor(ctx);
-      await deps.memoryService.capture({
+      const extractor = buildExtractor(ctx.modelRegistry);
+      const target = createNotificationTarget(ctx);
+      const sessionManager = snapshotSessionManager(ctx.sessionManager);
+      startBackgroundCapture(() => deps.memoryService.capture({
         type: "session_before_switch",
         reason: event.reason,
-        sessionManager: ctx.sessionManager,
-        target: ctx,
+        sessionManager,
+        ...(target ? { target } : {}),
         ...(extractor ? { extractor } : {}),
-      });
+      }));
     });
 
     pi.on("session_shutdown", async (event, ctx) => {
-      const extractor = buildExtractor(ctx);
-      await deps.memoryService.capture({
+      stopExtractorDebugOverlay();
+      const extractor = buildExtractor(ctx.modelRegistry);
+      const sessionManager = snapshotSessionManager(ctx.sessionManager);
+      const capture = () => deps.memoryService.capture({
         type: "session_shutdown",
         reason: event.reason,
-        sessionManager: ctx.sessionManager,
+        sessionManager,
         ...(extractor ? { extractor } : {}),
       });
 
+      if (isSessionReplacement(event.reason)) {
+        startBackgroundCapture(capture);
+        return;
+      }
+
+      await capture();
       await deps.flushPendingWrites();
     });
 

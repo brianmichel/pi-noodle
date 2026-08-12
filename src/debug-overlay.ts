@@ -39,10 +39,24 @@ const MIN_RUNNING_MS = 900;
 
 let spinnerIndex = 0;
 let spinnerTimer: ReturnType<typeof setInterval> | null = null;
+let overlayGeneration = 0;
+
+export function getExtractorDebugGeneration(): number {
+  return overlayGeneration;
+}
+
+function isCurrentGeneration(generation?: number): boolean {
+  return generation === undefined || generation === overlayGeneration;
+}
 
 function emit(): void {
   for (const ctx of sessions) {
-    ctx.ui.setWidget(WIDGET_KEY, renderWidget(ctx));
+    try {
+      ctx.ui.setWidget(WIDGET_KEY, renderWidget(ctx));
+    } catch {
+      // A session context can become stale while queued work is completing.
+      sessions.delete(ctx);
+    }
   }
 }
 
@@ -132,7 +146,9 @@ function finalizeRun(
   status: Extract<DebugRunStatus, "success" | "error">,
   options: { candidateTexts?: string[]; savedCount?: number; error?: string },
 ): void {
+  const generation = overlayGeneration;
   const apply = () => {
+    if (generation !== overlayGeneration) return;
     state.isRunning = false;
     stopSpinner();
     state.lastRun = {
@@ -158,6 +174,10 @@ function finalizeRun(
 }
 
 export function configureExtractorDebug(enabled: boolean, mode: string, triggerEvery: number): void {
+  overlayGeneration += 1;
+  sessions.clear();
+  state.isRunning = false;
+  stopSpinner();
   state.enabled = enabled && mode !== "off";
   state.mode = mode;
   state.triggerEvery = Math.max(1, triggerEvery);
@@ -179,7 +199,8 @@ export function noteUserTurnForExtractorDebug(): void {
   emit();
 }
 
-export function noteExtractorSkipped(reason: string): void {
+export function noteExtractorSkipped(reason: string, generation?: number): void {
+  if (!isCurrentGeneration(generation)) return;
   state.isRunning = false;
   state.lastRun = {
     startedAt: Date.now(),
@@ -192,7 +213,8 @@ export function noteExtractorSkipped(reason: string): void {
   emit();
 }
 
-export function noteExtractorQueued(reason: string, model?: string): void {
+export function noteExtractorQueued(reason: string, model?: string, generation?: number): void {
+  if (!isCurrentGeneration(generation)) return;
   state.isRunning = false;
   state.lastRun = {
     startedAt: Date.now(),
@@ -205,7 +227,8 @@ export function noteExtractorQueued(reason: string, model?: string): void {
   emit();
 }
 
-export function noteExtractorRunStarted(): void {
+export function noteExtractorRunStarted(generation?: number): void {
+  if (!isCurrentGeneration(generation)) return;
   state.isRunning = true;
   startSpinner();
   if (state.lastRun) {
@@ -215,16 +238,31 @@ export function noteExtractorRunStarted(): void {
   emit();
 }
 
-export function noteExtractorRunFinished(candidateTexts: string[], savedCount: number): void {
+export function noteExtractorRunFinished(candidateTexts: string[], savedCount: number, generation?: number): void {
+  if (!isCurrentGeneration(generation)) return;
   finalizeRun("success", { candidateTexts, savedCount });
 }
 
-export function noteExtractorRunFailed(error: string): void {
+export function noteExtractorRunFailed(error: string, generation?: number): void {
+  if (!isCurrentGeneration(generation)) return;
   finalizeRun("error", { error });
 }
 
 export function maybeStartExtractorDebugOverlay(ctx: ExtensionContext): void {
   if (!ctx.hasUI) return;
+  overlayGeneration += 1;
+  sessions.clear();
   sessions.add(ctx);
-  ctx.ui.setWidget(WIDGET_KEY, renderWidget(ctx));
+  try {
+    ctx.ui.setWidget(WIDGET_KEY, renderWidget(ctx));
+  } catch {
+    sessions.delete(ctx);
+  }
+}
+
+export function stopExtractorDebugOverlay(): void {
+  overlayGeneration += 1;
+  state.isRunning = false;
+  stopSpinner();
+  sessions.clear();
 }

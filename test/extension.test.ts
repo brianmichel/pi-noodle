@@ -10,6 +10,7 @@ import type {
   MemoryExtractorResolution,
   MemoryRecord,
 } from "../src/memory/types.ts";
+import { noteUserTurnForExtractorDebug } from "../src/debug-overlay.ts";
 import type { SessionManagerLike } from "../src/types.ts";
 
 type HookHandler = (...args: any[]) => unknown;
@@ -118,6 +119,22 @@ function createCtx() {
   };
 }
 
+function createUiCtx(onWidget: () => void) {
+  const ctx = createCtx();
+  return {
+    ...ctx,
+    hasUI: true,
+    ui: {
+      ...ctx.ui,
+      theme: {
+        fg: (_color: string, text: string) => text,
+        bold: (text: string) => text,
+      },
+      setWidget: (_key: string, _content: string[] | undefined) => onWidget(),
+    },
+  };
+}
+
 test("memory extension injects relevant memories into the agent prompt", async () => {
   const pi = createFakePi();
   const { deps } = createDeps({
@@ -218,6 +235,113 @@ test("memory extension forwards session lifecycle events through the same captur
     [null, "branch", "exit"],
   );
   assert.equal(calls.flushPendingWrites, 1);
+});
+
+test("memory extension detaches replaced and reloaded UI contexts before shutdown capture emits", async () => {
+  const pi = createFakePi();
+  const { deps } = createDeps({ extractorDebug: true, extractorMode: "balanced" });
+  const capture = deps.memoryService.capture;
+  deps.memoryService = {
+    ...deps.memoryService,
+    async capture(event) {
+      if (event.type === "session_shutdown") noteUserTurnForExtractorDebug();
+      return capture(event);
+    },
+  };
+
+  createMemoryExtension(deps)(pi as never);
+
+  const sessionStart = pi.hooks.get("session_start");
+  const shutdown = pi.hooks.get("session_shutdown");
+  assert.ok(sessionStart && shutdown);
+
+  let oldWidgetCount = 0;
+  const oldCtx = createUiCtx(() => { oldWidgetCount += 1; });
+  await sessionStart!({}, oldCtx);
+  const oldWidgetCountAfterStart = oldWidgetCount;
+
+  await shutdown!({ reason: "switch" }, oldCtx);
+  assert.equal(oldWidgetCount, oldWidgetCountAfterStart);
+
+  let replacementWidgetCount = 0;
+  const replacementCtx = createUiCtx(() => { replacementWidgetCount += 1; });
+  await sessionStart!({}, replacementCtx);
+  const replacementWidgetCountAfterStart = replacementWidgetCount;
+  noteUserTurnForExtractorDebug();
+  assert.ok(replacementWidgetCount > replacementWidgetCountAfterStart);
+
+  await shutdown!({ reason: "reload" }, replacementCtx);
+  assert.equal(replacementWidgetCount, replacementWidgetCountAfterStart + 1);
+  noteUserTurnForExtractorDebug();
+  assert.equal(replacementWidgetCount, replacementWidgetCountAfterStart + 1);
+  assert.equal(oldWidgetCount, oldWidgetCountAfterStart);
+});
+
+test("memory extension clears stale UI contexts before replacement initialization", async () => {
+  const firstPi = createFakePi();
+  const { deps } = createDeps({ extractorDebug: true, extractorMode: "balanced" });
+  createMemoryExtension(deps)(firstPi as never);
+
+  const firstSessionStart = firstPi.hooks.get("session_start");
+  const firstShutdown = firstPi.hooks.get("session_shutdown");
+  assert.ok(firstSessionStart && firstShutdown);
+
+  let stale = false;
+  const oldCtx = createUiCtx(() => {
+    if (stale) throw new Error("stale context");
+  });
+  await firstSessionStart!({}, oldCtx);
+  stale = true;
+
+  // Pi may provide a different context object during shutdown than it did at
+  // session_start. Cleanup must not depend on object identity.
+  await firstShutdown!({ reason: "reload" }, createCtx());
+
+  const replacementPi = createFakePi();
+  createMemoryExtension(deps)(replacementPi as never);
+  const replacementSessionStart = replacementPi.hooks.get("session_start");
+  assert.ok(replacementSessionStart);
+  await replacementSessionStart!({}, createUiCtx(() => undefined));
+});
+
+test("session replacement hooks do not wait for lifecycle memory capture", async () => {
+  const pi = createFakePi();
+  let releaseCapture!: () => void;
+  const captureReleased = new Promise<void>((resolve) => {
+    releaseCapture = resolve;
+  });
+  let captureStarted = false;
+  const { deps } = createDeps({
+    extractorMode: "balanced",
+    memoryService: {
+      async capture() {
+        captureStarted = true;
+        await captureReleased;
+        return {
+          plan: {
+            runHeuristics: false,
+            runLlmExtraction: false,
+            consolidate: false,
+          },
+          automaticCaptureQueued: false,
+          llmExtractionQueued: false,
+          consolidationQueued: false,
+        };
+      },
+      async findRelevantMemories() {
+        return [];
+      },
+    },
+  });
+
+  createMemoryExtension(deps)(pi as never);
+  const shutdown = pi.hooks.get("session_shutdown");
+  assert.ok(shutdown);
+
+  await shutdown!({ reason: "new" }, createCtx());
+  assert.equal(captureStarted, true);
+
+  releaseCapture();
 });
 
 test("memory extension still flushes writes on reload shutdown", async () => {

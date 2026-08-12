@@ -1,5 +1,6 @@
 import { DEFAULT_AGENT_ID } from "../constants.ts";
 import {
+  getExtractorDebugGeneration,
   noteExtractorQueued,
   noteExtractorRunFailed,
   noteExtractorRunFinished,
@@ -327,9 +328,10 @@ export class MemoryService {
   }
 
   private async queueExtractorRun(options: ExtractorRunOptions): Promise<boolean> {
+    const generation = getExtractorDebugGeneration();
     const resolved = await options.resolve();
     if (!resolved?.model || !resolved.apiKey) {
-      noteExtractorSkipped("extractor model not configured");
+      noteExtractorSkipped("extractor model not configured", generation);
       return false;
     }
 
@@ -339,19 +341,20 @@ export class MemoryService {
         options.reason.startsWith("shutdown:")
           ? "shutdown run skipped: not enough memory-worthy context yet"
           : "not enough memory-worthy context yet",
+        generation,
       );
       return false;
     }
 
-    noteExtractorQueued(options.reason, resolved.model.id);
+    noteExtractorQueued(options.reason, resolved.model.id, generation);
     enqueueWriteTask({
       label: "Memory LLM extraction",
       ...(options.target ? { target: options.target } : {}),
       onFailure: () => {
-        noteExtractorRunFailed("LLM extraction failed");
+        noteExtractorRunFailed("LLM extraction failed", generation);
       },
       task: async () => {
-        noteExtractorRunStarted();
+        noteExtractorRunStarted(generation);
         const candidates = await this.extractMemories(messages, resolved.model, {
           apiKey: resolved.apiKey,
           ...(resolved.headers ? { headers: resolved.headers } : {}),
@@ -380,7 +383,7 @@ export class MemoryService {
           }
         }
 
-        noteExtractorRunFinished(extractedTexts, savedCount);
+        noteExtractorRunFinished(extractedTexts, savedCount, generation);
       },
     });
 
