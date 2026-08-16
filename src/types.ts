@@ -1,4 +1,4 @@
-export type NoodleDbMode = "local" | "cloud";
+export type NoodleDbMode = "local" | "cloud" | "sync";
 
 export type NoodleEmbeddingProvider = "openai" | "lm_studio" | "ollama" | "custom";
 
@@ -34,6 +34,12 @@ export type NoodleConfig = {
     url?: string;
     /** Turso auth token for cloud mode */
     authToken?: string;
+    /**
+     * Sync mode only: push/pull interval in seconds. When set, a background
+     * timer syncs the local embedded replica with Turso Cloud. 0 = manual only
+     * (use /noodle sync). Defaults to 300 (5 minutes) when unset.
+     */
+    syncIntervalSeconds?: number;
   };
   embedding: {
     /** Human-readable provider label (openai, lm_studio, ollama, custom) */

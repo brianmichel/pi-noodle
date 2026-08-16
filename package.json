@@ -14,7 +14,10 @@
     "memory",
     "libsql",
     "turso",
-    "vector-search"
+    "vector-search",
+    "local-first",
+    "embedded",
+    "sync"
   ],
   "license": "MIT",
   "repository": {
@@ -53,7 +56,9 @@
     ]
   },
   "dependencies": {
-    "@libsql/client": "^0.15.0"
+    "@tursodatabase/database": "^0.7.0",
+    "@tursodatabase/serverless": "^1.4.0",
+    "@tursodatabase/sync": "^0.7.0"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",

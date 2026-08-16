@@ -14,6 +14,7 @@ import {
   extractorModelId as runtimeExtractorModelId,
   extractorTriggerEvery as runtimeExtractorTriggerEvery,
   memoryService as runtimeMemoryService,
+  syncManager as runtimeSyncManager,
 } from "./memory/runtime.ts";
 import type { MemoryCaptureEvent, MemoryCaptureResult, MemoryExtractorResolution, MemoryRecord } from "./memory/types.ts";
 import { flushPendingWrites as flushPendingWritesRuntime } from "./session.ts";
@@ -94,6 +95,7 @@ export function createMemoryExtension(deps: MemoryExtensionDeps = runtimeDeps) {
 
     pi.on("session_start", async (_event, ctx) => {
       maybeStartExtractorDebugOverlay(ctx);
+      runtimeSyncManager.start();
     });
 
     pi.on("input", async (event, ctx) => {
@@ -168,6 +170,8 @@ export function createMemoryExtension(deps: MemoryExtensionDeps = runtimeDeps) {
 
       await capture();
       await deps.flushPendingWrites();
+      await runtimeSyncManager.syncNow();
+      runtimeSyncManager.stop();
     });
 
     for (const tool of deps.memoryTools) {

@@ -93,24 +93,6 @@ function rowToRecord(row: Record<string, unknown>): MemoryRecord {
   return record;
 }
 
-// ---------------------------------------------------------------------------
-// Fallback: cosine similarity in pure JS
-// ---------------------------------------------------------------------------
-
-function cosineSimilarity(a: Float32Array, b: Float32Array): number {
-  let dot = 0;
-  let normA = 0;
-  let normB = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i]! * b[i]!;
-    normA += a[i]! * a[i]!;
-    normB += b[i]! * b[i]!;
-  }
-  const denom = Math.sqrt(normA) * Math.sqrt(normB);
-  return denom === 0 ? 0 : dot / denom;
-}
-
-
 function metadataMatches(recordMetadata: JsonObject, expected: JsonObject): boolean {
   return Object.entries(expected).every(([key, value]) => {
     const current = recordMetadata[key];
@@ -198,15 +180,17 @@ function applySearchFilters(records: Array<MemoryRecord & { _score: number }>, f
 // ---------------------------------------------------------------------------
 
 /**
- * SQLite/libSQL-backed memory store with vector search.
+ * SQLite/Turso-backed memory store with vector search.
  *
  * Requires an `Embedder` (OpenAI, LM Studio, etc.) injected at construction.
- * The `@libsql/client` WASM build has no native deps — works in Node, Bun, and
- * edge runtimes.
+ * The backing `db` is a libSQL-client-compatible surface (`execute` /
+ * `executeMultiple`): `@tursodatabase/serverless/compat` directly, or a
+ * `@tursodatabase/database`/`@tursodatabase/sync` `Database` wrapped by
+ * `libsqlCompat` in {@link turso-client.ts}. Works in Node, Bun, and edge.
  */
 export class TursoBackend implements MemoryBackend {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private readonly db: any; // @libsql/client Client
+  private readonly db: any; // libSQL-client-compatible (execute/executeMultiple)
   private readonly embedder: Embedder;
   private readonly embeddingSignature: string;
   private initialized = false;
@@ -329,16 +313,10 @@ export class TursoBackend implements MemoryBackend {
 
     for (const raw of result.rows as Record<string, unknown>[]) {
       const record = rowToRecord(raw) as MemoryRecord & { _score: number };
-      if (typeof raw.distance === "number") {
-        // cosine-distance ∈ [0, 2]; map to score ∈ [1, 0]
-        record._score = 1 - Math.max(0, Math.min(1, raw.distance / 2));
-      } else {
-        // Fallback: compute in JS from the raw blob (libSQL encodes length-prefixed F32_BLOB)
-        const vec = await this.readEmbedding(
-          typeof raw.id === "string" ? raw.id : "",
-        );
-        record._score = vec ? cosineSimilarity(queryEmbedding, vec) : 0;
-      }
+      // cosine-distance ∈ [0, 2]; map to score ∈ [1, 0]. vector_distance_cos is
+      // native to the Turso engine and always returns a number.
+      const distance = typeof raw.distance === "number" ? raw.distance : 2;
+      record._score = 1 - Math.max(0, Math.min(1, distance / 2));
       records.push(record);
     }
 
@@ -656,26 +634,6 @@ export class TursoBackend implements MemoryBackend {
     const embedding = await this.embedder.embed(text);
     this.resolveDimensions(embedding.length);
     return embedding;
-  }
-
-  /** Read stored embedding as Float32Array. Returns null on missing row. */
-  private async readEmbedding(id: string): Promise<Float32Array | null> {
-    const result = await this.db.execute({
-      sql: "SELECT embedding FROM memories WHERE id = ?",
-      args: [id],
-    });
-    if (result.rows.length === 0) return null;
-    const blob: unknown = (result.rows[0] as Record<string, unknown>).embedding;
-    if (blob instanceof Uint8Array) {
-      // Assumption: F32_BLOB is stored with 4 bytes per f32, little-endian.
-      return new Float32Array(
-        new Uint8Array(blob).buffer.slice(
-          blob.byteOffset,
-          blob.byteOffset + blob.byteLength,
-        ),
-      );
-    }
-    return null;
   }
 }
 

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { createClient } from "@libsql/client";
+import { createMemoryClient } from "../src/memory/turso-client.ts";
 
 import { flushPendingWrites } from "../src/queue.ts";
 import { MemoryService } from "../src/memory/service.ts";
@@ -10,7 +10,7 @@ import type { MemoryCaptureEvent, MemoryRecord } from "../src/memory/types.ts";
 import { fakeSemanticEmbedder } from "./helpers/fake-embedder.ts";
 
 async function createService(): Promise<{ service: MemoryService; close: () => void }> {
-  const db = createClient({ url: ":memory:" });
+  const db = await createMemoryClient();
   const backend = new TursoBackend(db, fakeSemanticEmbedder);
   return {
     service: new MemoryService(backend),
@@ -127,7 +127,7 @@ test("quality eval: implicit preferences are ignored until an extractor produces
 });
 
 test("quality eval: project memories only retrieve for the matching project key", async () => {
-  const db = createClient({ url: ":memory:" });
+  const db = await createMemoryClient();
   const backend = new TursoBackend(db, fakeSemanticEmbedder);
   const service = new MemoryService(backend, { projectKeyResolver: () => "github.com/acme/pi-noodle" });
 
@@ -163,7 +163,7 @@ test("quality eval: project memories only retrieve for the matching project key"
 });
 
 test("quality eval: memory retrieval stays isolated across assistant, user, and session scopes", async () => {
-  const db = createClient({ url: ":memory:" });
+  const db = await createMemoryClient();
   const backend = new TursoBackend(db, fakeSemanticEmbedder);
 
   try {

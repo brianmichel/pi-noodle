@@ -14,6 +14,7 @@ export const FIELD = {
   DB_PATH: "dbPath",
   DB_URL: "dbUrl",
   DB_AUTH_TOKEN: "dbAuthToken",
+  DB_SYNC_INTERVAL: "dbSyncInterval",
   EMBEDDING_PROVIDER: "embeddingProvider",
   EMBEDDING_API_KEY: "embeddingApiKey",
   EMBEDDING_BASE_URL: "embeddingBaseUrl",
@@ -31,6 +32,7 @@ export type DraftConfig = {
   dbPath: string;
   dbUrl: string;
   dbAuthToken: string;
+  dbSyncInterval: string;
   embeddingProvider: NoodleEmbeddingProvider;
   embeddingApiKey: string;
   embeddingBaseUrl: string;
@@ -47,6 +49,7 @@ export function createDraft(config: NoodleConfig): DraftConfig {
     dbPath: config.db.path,
     dbUrl: config.db.url ?? "libsql://",
     dbAuthToken: config.db.authToken ?? "",
+    dbSyncInterval: String(config.db.syncIntervalSeconds ?? 300),
     embeddingProvider: normalizeEmbeddingProvider(config.embedding.provider),
     embeddingApiKey: config.embedding.apiKey,
     embeddingBaseUrl: config.embedding.baseUrl,
@@ -65,6 +68,7 @@ export function applyDraftDefaults(draft: DraftConfig): DraftConfig {
   draft.embeddingProvider = normalizeEmbeddingProvider(draft.embeddingProvider);
 
   if (!draft.dbUrl) draft.dbUrl = "libsql://";
+  if (!draft.dbSyncInterval) draft.dbSyncInterval = "300";
   if (!draft.extractorModel) draft.extractorModel = "";
   if (!draft.extractorTriggerEvery) {
     draft.extractorTriggerEvery = String(defaultExtractorTriggerEvery(activeExtractorMode(draft.extractorMode)));
@@ -108,6 +112,19 @@ export function validateDraft(draft: DraftConfig): string[] {
       errors.push("Turso auth token is required for cloud mode.");
     }
   }
+  if (draft.dbMode === "sync") {
+    const url = draft.dbUrl.trim();
+    if (!url.startsWith("libsql://") && !url.startsWith("turso://")) {
+      errors.push('Turso database URL must start with "libsql://" or "turso://".');
+    }
+    if (!draft.dbAuthToken.trim()) {
+      errors.push("Turso auth token is required for sync mode.");
+    }
+    const interval = parseInt(draft.dbSyncInterval.trim(), 10);
+    if (Number.isNaN(interval) || interval < 0) {
+      errors.push("Sync interval must be 0 (manual only) or a positive number of seconds.");
+    }
+  }
 
   switch (draft.embeddingProvider) {
     case "openai":
@@ -142,8 +159,11 @@ export function toPartialConfig(draft: DraftConfig): NoodleConfigPartial {
     db: {
       mode: draft.dbMode,
       path: draft.dbPath.trim(),
-      ...(draft.dbMode === "cloud"
+      ...(draft.dbMode === "cloud" || draft.dbMode === "sync"
         ? { url: draft.dbUrl.trim(), authToken: draft.dbAuthToken.trim() }
+        : {}),
+      ...(draft.dbMode === "sync"
+        ? { syncIntervalSeconds: parseSyncInterval(draft.dbSyncInterval) }
         : {}),
     },
     embedding: {
@@ -180,7 +200,7 @@ export function toPartialConfig(draft: DraftConfig): NoodleConfigPartial {
 
 export function summarizeDraft(draft: DraftConfig): string[] {
   return [
-    `Database: ${draft.dbMode}  ${draft.dbMode === "cloud" ? draft.dbUrl.trim() : draft.dbPath.trim()}`,
+    `Database: ${draft.dbMode}  ${draft.dbMode === "local" ? draft.dbPath.trim() : draft.dbUrl.trim()}${draft.dbMode === "sync" ? `  sync every ${parseSyncInterval(draft.dbSyncInterval)}s` : ""}`,
     `Embedding: ${draft.embeddingProvider}  ${draft.embeddingModel.trim() || draft.embeddingBaseUrl.trim()}`,
     draft.extractorMode !== "off" && draft.extractorModel.trim()
       ? `Memory mode: ${draft.extractorMode}  ${draft.extractorModel.trim()}  every ${parseInt(draft.extractorTriggerEvery.trim(), 10) || defaultExtractorTriggerEvery(activeExtractorMode(draft.extractorMode))} turns  debug ${draft.extractorDebug ? "on" : "off"}`
@@ -198,6 +218,8 @@ export function labelForField(id: ConfigFieldId): string {
       return "Turso database URL";
     case FIELD.DB_AUTH_TOKEN:
       return "Turso auth token";
+    case FIELD.DB_SYNC_INTERVAL:
+      return "Sync interval (seconds)";
     case FIELD.EMBEDDING_PROVIDER:
       return "Embedding provider";
     case FIELD.EMBEDDING_API_KEY:
@@ -231,4 +253,10 @@ export function parseExtractorMode(value: string): NoodleExtractorMode {
 
 export function activeExtractorMode(mode: NoodleExtractorMode): Exclude<NoodleExtractorMode, "off"> {
   return mode === "off" ? "balanced" : mode;
+}
+
+/** Parse the sync-interval draft field, preserving 0 (manual-only). Defaults to 300. */
+export function parseSyncInterval(value: string): number {
+  const n = parseInt(value.trim(), 10);
+  return Number.isNaN(n) || n < 0 ? 300 : n;
 }

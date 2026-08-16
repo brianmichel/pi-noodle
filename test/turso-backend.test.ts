@@ -1,4 +1,4 @@
-import { createClient } from "@libsql/client";
+import { createMemoryClient } from "../src/memory/turso-client.ts";
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { TursoBackend } from "../src/memory/turso-backend.ts";
@@ -34,7 +34,7 @@ describe("TursoBackend", () => {
   let db: any;
 
   before(async () => {
-    db = createClient({ url: ":memory:" });
+    db = await createMemoryClient();
     backend = new TursoBackend(db, fakeEmbedder);
   });
 
@@ -330,7 +330,7 @@ describe("TursoBackend", () => {
   });
 
   it("rejects embedding dimension drift across providers or model config", async () => {
-    const db2 = createClient({ url: ":memory:" });
+    const db2 = await createMemoryClient();
     try {
       const backendA = new TursoBackend(db2, {
         dimensions: 8,
@@ -375,7 +375,7 @@ describe("TursoBackend", () => {
   });
 
   it("consolidates duplicate memories by merging metadata, categories, and retrieval stats", async () => {
-    const isolateDb = createClient({ url: ":memory:" });
+    const isolateDb = await createMemoryClient();
     const isolateBackend = new TursoBackend(isolateDb, fakeEmbedder);
     const scope = { assistantId: "agent-consolidate", userId: "user-consolidate" };
 

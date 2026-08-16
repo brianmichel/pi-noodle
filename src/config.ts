@@ -76,6 +76,14 @@ export function resolveConfig(): NoodleConfig {
     config.db.mode = "cloud";
   }
   if (env["NOODLE_DB_TOKEN"]) config.db.authToken = env["NOODLE_DB_TOKEN"];
+  if (env["NOODLE_DB_SYNC_URL"]) {
+    config.db.url = env["NOODLE_DB_SYNC_URL"];
+    config.db.mode = "sync";
+  }
+  if (env["NOODLE_DB_SYNC_INTERVAL"]) {
+    const n = parseInt(env["NOODLE_DB_SYNC_INTERVAL"], 10);
+    if (!isNaN(n) && n >= 0) config.db.syncIntervalSeconds = n;
+  }
   if (env["OPENAI_API_KEY"]) config.embedding.apiKey = env["OPENAI_API_KEY"];
   if (env["EMBEDDING_BASE_URL"]) config.embedding.baseUrl = env["EMBEDDING_BASE_URL"];
   if (env["EMBEDDING_MODEL"]) config.embedding.model = env["EMBEDDING_MODEL"];
