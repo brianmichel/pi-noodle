@@ -14,6 +14,7 @@ import type { CtxUi } from "./ui.ts";
 const DB_MODE_OPTIONS = [
   "Local   — SQLite file on disk (default)",
   "Cloud   — Turso hosted libSQL (sync everywhere)",
+  "Sync    — local-first embedded replica that pushes/pulls to Turso Cloud",
 ];
 
 const PROVIDER_OPTIONS = [
@@ -68,25 +69,29 @@ export async function runSetup(ui: CtxUi): Promise<void> {
 
 async function collectDraftFromPrompts(ui: CtxUi, draft: DraftConfig): Promise<DraftConfig> {
   const dbChoice = await ui.select("Database mode", DB_MODE_OPTIONS);
-  draft.dbMode = dbChoice?.startsWith("Cloud") ? "cloud" : "local";
+  draft.dbMode = dbChoice?.startsWith("Cloud") ? "cloud" : dbChoice?.startsWith("Sync") ? "sync" : "local";
 
   if (draft.dbMode === "local") {
     draft.dbPath = (await ui.input("Database file path", draft.dbPath)) || draft.dbPath;
   } else {
+    const isSync = draft.dbMode === "sync";
     draft.dbUrl = await requireInput(
       ui,
-      "Turso database URL (libsql://…)",
-      'URL must start with "libsql://"',
-      (value) => value.startsWith("libsql://"),
+      isSync ? "Turso database URL (libsql:// or turso://…)" : "Turso database URL (libsql://…)",
+      isSync ? 'URL must start with "libsql://" or "turso://"' : 'URL must start with "libsql://"',
+      (value) => isSync ? value.startsWith("libsql://") || value.startsWith("turso://") : value.startsWith("libsql://"),
       draft.dbUrl,
     );
     draft.dbAuthToken = await requireInput(
       ui,
       "Turso auth token",
-      "Auth token is required for cloud databases",
+      "Auth token is required for cloud/sync databases",
       (value) => value.length > 0,
       draft.dbAuthToken,
     );
+    if (isSync) {
+      draft.dbSyncInterval = (await ui.input("Sync interval in seconds (0 = manual only, default 300)", draft.dbSyncInterval)) || draft.dbSyncInterval;
+    }
   }
 
   const providerChoice = await ui.select("Embedding provider", PROVIDER_OPTIONS);

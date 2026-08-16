@@ -162,7 +162,7 @@ function buildItems(
   applyChange: (id: string, value: string) => void,
 ): SettingItem[] {
   const items: SettingItem[] = [
-    choiceItem(FIELD.DB_MODE, "Database mode", draft.dbMode, ["local", "cloud"], "Where memories are stored: local SQLite file or Turso cloud libSQL."),
+    choiceItem(FIELD.DB_MODE, "Database mode", draft.dbMode, ["local", "cloud", "sync"], "local = SQLite file; cloud = Turso-hosted remote; sync = local-first embedded replica that pushes/pulls to Turso Cloud."),
   ];
 
   if (draft.dbMode === "local") {
@@ -172,7 +172,7 @@ function buildItems(
       description: "Path to the local SQLite/libSQL database file.",
       value: draft.dbPath,
     }));
-  } else {
+  } else if (draft.dbMode === "cloud") {
     items.push(
       textFieldItem(draft, tui, theme, applyChange, {
         id: FIELD.DB_URL,
@@ -186,6 +186,28 @@ function buildItems(
         description: "Access token for the Turso database.",
         value: maskSecret(draft.dbAuthToken),
         rawValue: draft.dbAuthToken,
+      }),
+    );
+  } else {
+    items.push(
+      textFieldItem(draft, tui, theme, applyChange, {
+        id: FIELD.DB_URL,
+        label: "Turso database URL",
+        description: 'Turso Cloud URL to sync with ("libsql://" or "turso://").',
+        value: draft.dbUrl,
+      }),
+      textFieldItem(draft, tui, theme, applyChange, {
+        id: FIELD.DB_AUTH_TOKEN,
+        label: "Turso auth token",
+        description: "Access token for the Turso database.",
+        value: maskSecret(draft.dbAuthToken),
+        rawValue: draft.dbAuthToken,
+      }),
+      textFieldItem(draft, tui, theme, applyChange, {
+        id: FIELD.DB_SYNC_INTERVAL,
+        label: "Sync interval (seconds)",
+        description: "Push/pull cadence. 0 = manual only (use /noodle sync). Default 300 (5 min).",
+        value: draft.dbSyncInterval,
       }),
     );
   }
@@ -393,7 +415,7 @@ function createTextEditor(
 function applyDraftChange(draft: DraftConfig, id: ConfigFieldId, value: string): void {
   switch (id) {
     case FIELD.DB_MODE:
-      draft.dbMode = value === "cloud" ? "cloud" : "local";
+      draft.dbMode = value === "cloud" ? "cloud" : value === "sync" ? "sync" : "local";
       break;
     case FIELD.DB_PATH:
       draft.dbPath = value;
@@ -403,6 +425,9 @@ function applyDraftChange(draft: DraftConfig, id: ConfigFieldId, value: string):
       break;
     case FIELD.DB_AUTH_TOKEN:
       draft.dbAuthToken = value;
+      break;
+    case FIELD.DB_SYNC_INTERVAL:
+      draft.dbSyncInterval = value;
       break;
     case FIELD.EMBEDDING_PROVIDER:
       draft.embeddingProvider = normalizeProviderSelection(value);

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { createClient } from "@libsql/client";
+import { createMemoryClient } from "../src/memory/turso-client.ts";
 
 import { flushPendingWrites } from "../src/queue.ts";
 import { MemoryService } from "../src/memory/service.ts";
@@ -23,7 +23,7 @@ type MemoryEvalCase = {
 };
 
 async function createService(): Promise<{ service: MemoryService; close: () => void }> {
-  const db = createClient({ url: ":memory:" });
+  const db = await createMemoryClient();
   const backend = new TursoBackend(db, fakeSemanticEmbedder);
   return {
     service: new MemoryService(backend),

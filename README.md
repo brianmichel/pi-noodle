@@ -9,7 +9,7 @@ This repo is building a small, opinionated memory system that tries to be:
 - **automatic** — capture durable signals from normal conversation
 - **inspectable** — review what was saved, pending, or discarded
 
-Under the hood it uses [libSQL](https://turso.tech/libsql) for storage and vector similarity search for retrieval.
+Under the hood it uses the [Turso database engine](https://docs.turso.tech/introduction) (via `@tursodatabase/database` for local, `@tursodatabase/sync` for local-first sync, and `@tursodatabase/serverless` for cloud) for storage and native vector similarity search for retrieval.
 
 ![](img/dashboard.jpeg)
 
@@ -24,7 +24,7 @@ pi install @brianmichel/pi-noodle
 ```
 
 The setup screen shows the full config on one page:
-1. Database mode — local file or Turso Cloud
+1. Database mode — local file, Turso Cloud, or local-first Sync
 2. Embedding provider — OpenAI, LM Studio, Ollama, or custom
 3. Relevant fields update in place as you switch modes/providers
 4. Required fields are validated before save
@@ -39,6 +39,7 @@ Settings are saved to `~/.pi/noodle/config.json` — memories travel with you ac
 /noodle forget <query>   Find and delete a memory
 /noodle edit <query>     Find and update a memory
 /noodle review           Review recent auto-saved memories
+/noodle sync             Push/pull a sync-mode DB with Turso Cloud (flushes writes first)
 /noodle settings         Interactive single-screen configuration editor with validation
 /noodle setup            Alias for /noodle settings
 /noodle init             Create a default config file for manual editing
@@ -70,6 +71,32 @@ Run `/noodle web` in Pi to open the explorer in your browser. The server runs in
   "db": {
     "mode": "local",
     "path": "/Users/you/.pi/noodle/memories.db"
+  },
+  "embedding": {
+    "provider": "openai",
+    "apiKey": "sk-...",
+    "baseUrl": "https://api.openai.com/v1",
+    "model": "text-embedding-3-small"
+  }
+}
+```
+
+### Sync mode (local-first + cloud sync)
+
+Local-first embedded replica: all reads and writes hit a local Turso database
+file, and changes are pushed to / pulled from Turso Cloud on a configurable
+interval (and on `/noodle sync`). On first launch the local DB bootstraps from
+the remote, so the remote must be reachable once. Set `syncIntervalSeconds` to
+`0` for manual-only sync.
+
+```json
+{
+  "db": {
+    "mode": "sync",
+    "path": "/Users/you/.pi/noodle/memories.db",
+    "url": "libsql://my-db-org.turso.io",
+    "authToken": "eyJ...",
+    "syncIntervalSeconds": 300
   },
   "embedding": {
     "provider": "openai",
@@ -129,8 +156,10 @@ Env vars take priority over the config file:
 |---|---|
 | `NOODLE_CONFIG_PATH` | Config file location |
 | `NOODLE_DB_PATH` | Local DB path |
-| `NOODLE_DB_URL` | Cloud DB URL |
+| `NOODLE_DB_URL` | Cloud DB URL (sets mode to `cloud`) |
 | `NOODLE_DB_TOKEN` | Cloud DB auth token |
+| `NOODLE_DB_SYNC_URL` | Sync DB URL (sets mode to `sync`) |
+| `NOODLE_DB_SYNC_INTERVAL` | Sync push/pull interval in seconds (`0` = manual) |
 | `OPENAI_API_KEY` | Embedding API key |
 | `EMBEDDING_BASE_URL` | Embedding endpoint URL |
 | `EMBEDDING_MODEL` | Embedding model name |
@@ -153,7 +182,7 @@ Pi lifecycle events
               MemoryBackend
                     │
                TursoBackend
-               ├─► libSQL (local or cloud)
+               ├─► Turso engine (local database | sync | serverless)
                └─► Embedder
 ```
 
@@ -188,11 +217,11 @@ input / compact / switch / shutdown
 
 ### What gets stored
 
-Every memory is a row in SQLite with `text`, `embedding` (F32_BLOB), `category`, `categories`, `scope` (userId/assistantId/sessionId), and arbitrary `metadata`.
+Every memory is a row in the local Turso database with `text`, `embedding` (stored as a vector BLOB via `vector32()`), `category`, `categories`, `scope` (userId/assistantId/sessionId), and arbitrary `metadata`.
 
 ### Search
 
-Vector similarity via `vector_distance_cos()` in libSQL, ranked by cosine distance, post-filtered by category and threshold.
+Vector similarity via `vector_distance_cos()` in Turso, ranked by cosine distance, post-filtered by category and threshold.
 
 ### Policy and review
 
@@ -214,6 +243,7 @@ src/
 ├── types.ts               # NoodleConfig, JsonObject, NotificationTarget, etc.
 ├── utils.ts               # maskSecret, describeError, formatJson, extractTextContent
 ├── commands.ts            # /noodle command + interactive setup entrypoint
+├── commands/           # index, status, setup, sync, review, memory-crud, web, ui
 ├── extension.ts           # Pi extension lifecycle hooks
 ├── tools.ts               # memory_add / search / list / get / update / delete
 ├── session.ts             # Session message collection
@@ -222,10 +252,12 @@ src/
 └── memory/
     ├── backend.ts         # MemoryBackend interface
     ├── types.ts           # MemoryRecord, MemoryScope, etc.
-    ├── turso-backend.ts   # TursoBackend (libSQL + vector search)
+    ├── turso-backend.ts   # TursoBackend (Turso engine + vector search)
+    ├── turso-client.ts    # Engine picker + libSQL-compat adapter + lazy backend
+    ├── sync-manager.ts    # SyncManager (push/pull + interval for sync mode)
     ├── embedder.ts        # Embedder type
     ├── embedders/         # openai.ts, lm-studio.ts
     ├── service.ts         # MemoryService (event-driven capture pipeline + promotion)
     ├── policy.ts          # Heuristics (classification, repetition, retrieval)
-    └── runtime.ts         # Wiring (config + TursoBackend + MemoryService)
+    └── runtime.ts         # Wiring (config + TursoBackend + MemoryService + SyncManager)
 ```
